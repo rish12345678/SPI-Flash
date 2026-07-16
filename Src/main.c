@@ -7,20 +7,24 @@
 #if !defined(__SOFT_FP__) && defined(__ARM_FP)
 #endif
 
+// Basic Profile Pin Toggle
+#define Toggle_Profile_Pin_High() (GPIOA->BSRR = (GPIO_BSRR_BS1))
+#define Toggle_Profile_Pin_Low() (GPIOA->BRR = (GPIO_BRR_BR1))
+
 // Global variables that ISR can mutate
 
-const uint32_t transfer_len = 2; // How many bytes we are sending
+#define TRANSFER_LEN 4 // How many bytes we are sending
 
 // Array to hold outgoing bytes
-volatile uint8_t transfer_arr[] = {0x24, 0x48};
+volatile uint8_t transfer_arr[] = {0x24, 0x48, 0x11, 0x54};
 volatile uint8_t* transfer_arr_ptr = transfer_arr;
 
 // Array to capture incoming bytes
-volatile uint8_t incoming_arr[transfer_len];
+volatile uint8_t incoming_arr[TRANSFER_LEN];
 volatile uint8_t* incoming_arr_ptr = incoming_arr;
 
-volatile uint8_t incoming_idx = 0;
-volatile uint8_t outgoing_idx = 0;
+uint8_t incoming_idx = 0;
+uint8_t outgoing_idx = 0;
 
 volatile bool is_spi_idle = true;
 
@@ -52,17 +56,26 @@ uint8_t SPI_SEND_BYTE(void);
 
 int main(void)
 {
+	Toggle_Profile_Pin_Low();
+
 	clock_init();
 	GPIO_init();
 	SPI_CR1_setup();
 	SPI_CR2_setup();
 
-	NVIC_EnableIRQ(SPI1_IRQn);
+
+
+
+//	NVIC_EnableIRQ(SPI1_IRQn);
+
+
 
 	volatile uint8_t echo_reg = 0;
 
 	for (;;) {
+		Toggle_Profile_Pin_High();
 		echo_reg = SPI_SEND_BYTE(); // Should hold 0x24
+		Toggle_Profile_Pin_Low();
 
 		// Delay between sends
 		if (echo_reg == 0x84) {
@@ -82,6 +95,18 @@ void clock_init(void) {
 }
 
 void GPIO_init(void) {
+	// Set Up Profile Pin
+	GPIOA->MODER &= ~(GPIO_MODER_MODE1_Msk);
+	GPIOA->MODER |= GPIO_MODER_MODE1_0;
+
+	// Minimal slew rate
+	GPIOA->OSPEEDR |= GPIO_OSPEEDR_OSPEED1_1;
+
+	// Start low before transfer
+	GPIOA->BRR = (1U << 1);
+
+
+
 	// Set GPIO Port A pins 5, 6, 7 to AF - Part of SPI bus now
 	GPIOA->MODER &= ~(GPIO_MODER_MODE5 | GPIO_MODER_MODE6 | GPIO_MODER_MODE7);
 	GPIOA->MODER |= (GPIO_MODER_MODE5_1 | GPIO_MODER_MODE6_1 | GPIO_MODER_MODE7_1);
@@ -135,8 +160,8 @@ void SPI_CR2_setup(void) {
 	SPI1->CR1 |= SPI_CR1_SPE;
 
 	// Set the interrupt flags, so that the TX and RX buffers spike the interrupt upon hitting their thresholds
-	SPI1->CR2 |= SPI_CR2_TXEIE;
-	SPI1->CR2 |= SPI_CR2_RXNEIE;
+//	SPI1->CR2 |= SPI_CR2_TXEIE;
+//	SPI1->CR2 |= SPI_CR2_RXNEIE;
 }
 
 
@@ -151,21 +176,28 @@ void SPI_CR2_setup(void) {
  * Once RX not empty, raise CS line to high and return whats in shift register
  */
 uint8_t SPI_SEND_BYTE(void) {
+	incoming_idx = 0;
+	outgoing_idx = 0;
 	// Pull chip select low, to indicate communication
 	GPIOA->ODR &= ~(1U << 4);
 
 	// while TX buffer not empty, keep polling
 	// once empty give it byte
+	while(outgoing_idx < TRANSFER_LEN) {
+		// Check if bit 1 is 0
+		while (!(SPI1->SR & SPI_SR_TXE));
 
-	// Check if bit 1 is 0
-	while (!(SPI1->SR & SPI_SR_TXE));
+		*(__IO uint8_t *)&SPI1->DR = transfer_arr[outgoing_idx]; // Sample Data to send 0x84 | 0b 1000 0100
+		outgoing_idx++;
 
-	*(__IO uint8_t *)&SPI1->DR = 0x84; // Sample Data to send 0x84 | 0b 1000 0100
+		while (!(SPI1->SR & SPI_SR_RXNE)); // Poll until RX buffer has a byte in it
+		incoming_arr[incoming_idx] = *(__IO uint8_t *)&SPI1->DR;
+		incoming_idx++;
+	}
 
-	while (!(SPI1->SR & SPI_SR_RXNE)); // Poll until RX buffer has a byte in it
 	while (SPI1->SR & SPI_SR_BSY); // Poll until shift register is not busy in transmission
 
 	GPIOA->ODR |= (1U << 4);
 
-	return *(__IO uint8_t *)&SPI1->DR; // Read to pop off RX FIFO setting of RXNE flag again.
+	return incoming_arr[incoming_idx - 1]; // Return last element from the list
 }
