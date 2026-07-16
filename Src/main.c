@@ -23,8 +23,8 @@ volatile uint8_t* transfer_arr_ptr = transfer_arr;
 volatile uint8_t incoming_arr[TRANSFER_LEN];
 volatile uint8_t* incoming_arr_ptr = incoming_arr;
 
-uint8_t incoming_idx = 0;
-uint8_t outgoing_idx = 0;
+volatile uint8_t incoming_idx = 0;
+volatile uint8_t outgoing_idx = 0;
 
 volatile bool is_spi_idle = true;
 
