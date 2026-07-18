@@ -1,5 +1,9 @@
 #include "../Inc/stm32l476xx.h"
 
+#define ENABLE_PROFILE // Turn on Profiling Pin Settings
+#include "spi.h"
+#include "bsp.h"
+
 
 #include <stdint.h>
 #include <stdbool.h>
@@ -7,197 +11,25 @@
 #if !defined(__SOFT_FP__) && defined(__ARM_FP)
 #endif
 
-// Basic Profile Pin Toggle
-#define Toggle_Profile_Pin_High() (GPIOA->BSRR = (GPIO_BSRR_BS1))
-#define Toggle_Profile_Pin_Low() (GPIOA->BRR = (GPIO_BRR_BR1))
-
-// Global variables that ISR can mutate
-
-#define TRANSFER_LEN 4 // How many bytes we are sending
-
-// Array to hold outgoing bytes
-volatile uint8_t transfer_arr[] = {0x24, 0x48, 0x11, 0x54};
-volatile uint8_t* transfer_arr_ptr = transfer_arr;
-
-// Array to capture incoming bytes
-volatile uint8_t incoming_arr[TRANSFER_LEN];
-volatile uint8_t* incoming_arr_ptr = incoming_arr;
-
-volatile uint8_t incoming_idx = 0;
-volatile uint8_t outgoing_idx = 0;
-
-volatile bool is_spi_idle = true;
-
-
-
-
-/*
- * FUNCTION DECLARATIONS
- */
-
-// Turn on clock for GPIOA and SPI1
-void clock_init(void);
-
-// Set mode for GPIOA (AF)
-void GPIO_init(void);
-
-/*
- * Configure SPI Peripheral
- */
-
-// SPI_CR1 Register Configuration
-void SPI_CR1_setup(void);
-
-// SPI_CR2 Register Configuration
-void SPI_CR2_setup(void);
-
-uint8_t SPI_SEND_BYTE(void);
-
+// Main runs a simple loop back test by connecting the MOSI line to the MISO pin
 
 int main(void)
 {
+	SPI_Setup();
 	Toggle_Profile_Pin_Low();
-
-	clock_init();
-	GPIO_init();
-	SPI_CR1_setup();
-	SPI_CR2_setup();
-
-
-
-
-//	NVIC_EnableIRQ(SPI1_IRQn);
-
-
-
-	volatile uint8_t echo_reg = 0;
+	PROFILE_PIN_INIT();
 
 	for (;;) {
 		Toggle_Profile_Pin_High();
-		echo_reg = SPI_SEND_BYTE(); // Should hold 0x24
+		SPI_SEND_BYTE_POLLING(); // Should load up incoming_arr[] with {0x24, 0x48, 0x11, 0x54}
 		Toggle_Profile_Pin_Low();
 
-		// Delay between sends
-		if (echo_reg == 0x84) {
-			for(volatile int i = 0; i < 4000; i++); // ~10 ms between transmissions
-		} else {
-			for(volatile int i = 0; i < 20000; i++); // ~50 ms between transmissions
-		}
+//		for (int i = 0; i < TRANSFER_LEN; i++) {
+//			if (!(transfer_arr[i] == incoming_arr[i])) {
+//				while (1);
+//			}
+//		}
+		for(volatile int i = 0; i < 4000; i++); // ~10 ms between transmissions
 	}
 
-}
-// Init Functions
-
-void clock_init(void) {
-	// Set both bits to one enabling clock
-	RCC->AHB2ENR |= RCC_AHB2ENR_GPIOAEN; // Gate clock to GPIO (A)
-	RCC->APB2ENR |= RCC_APB2ENR_SPI1EN; // Gate clock to SPI1
-}
-
-void GPIO_init(void) {
-	// Set Up Profile Pin
-	GPIOA->MODER &= ~(GPIO_MODER_MODE1_Msk);
-	GPIOA->MODER |= GPIO_MODER_MODE1_0;
-
-	// Minimal slew rate
-	GPIOA->OSPEEDR |= GPIO_OSPEEDR_OSPEED1_1;
-
-	// Start low before transfer
-	GPIOA->BRR = (1U << 1);
-
-
-
-	// Set GPIO Port A pins 5, 6, 7 to AF - Part of SPI bus now
-	GPIOA->MODER &= ~(GPIO_MODER_MODE5 | GPIO_MODER_MODE6 | GPIO_MODER_MODE7);
-	GPIOA->MODER |= (GPIO_MODER_MODE5_1 | GPIO_MODER_MODE6_1 | GPIO_MODER_MODE7_1);
-
-	// Set these four pins to belong to the SPI1 Peripheral (Will hardcode chip select pin PA4)
-	GPIOA->AFR[0] &= ~(0xF << GPIO_AFRL_AFSEL5_Pos | 0xF << GPIO_AFRL_AFSEL6_Pos | 0xF << GPIO_AFRL_AFSEL7_Pos); // Clear for pins 5 6 7
-
-	GPIOA->AFR[0] |= ( (GPIO_AFRL_AFSEL5_0 | GPIO_AFRL_AFSEL5_2) | (GPIO_AFRL_AFSEL6_0 | GPIO_AFRL_AFSEL6_2) | (GPIO_AFRL_AFSEL7_0 | GPIO_AFRL_AFSEL7_2));
-
-	// Set Pin speed for SCK, MISO, and MOSI pins to high for sharp squarish clock edges
-	GPIOA->OSPEEDR |= (GPIO_OSPEEDR_OSPEED5_1 | GPIO_OSPEEDR_OSPEED6_1 | GPIO_OSPEEDR_OSPEED7_1);
-
-
-	// Initialize the Chip Select Pin PA4, as a traditional output, will drive high, low when needed
-
-
-	GPIOA->MODER &= ~(GPIO_MODER_MODE4_Msk);
-	GPIOA->MODER |= GPIO_MODER_MODE4_0;
-
-	GPIOA->ODR |= (1U << 4);
-}
-
-void SPI_CR1_setup(void) {
-	SPI1->CR1 = 0x0000; // Ensure reset value first
-
-	// Divide Micro-controller clock (4 MHz) by 16 to avoid early hardware related issues
-	// Set Baud Rate to 250 kHz
-	SPI1->CR1 &= ~(SPI_CR1_BR_Msk);
-	SPI1->CR1 |= (SPI_CR1_BR_0 | SPI_CR1_BR_1);
-
-
-	// Set CPOL to zero -> Clock at 0 when idle
-	// Set CPHA to zero -> Data capture occurs on first clock edge (rising edge)
-	SPI1->CR1 &= ~(SPI_CR1_CPOL_Msk | SPI_CR1_CPHA_Msk); // Standard for SPI Flash
-
-	// ----*  *~* *~* *~* *~*
-	// Software Slave Management and Master Mode
-	SPI1->CR1 |= (SPI_CR1_SSM | SPI_CR1_SSI);
-	SPI1->CR1 |= SPI_CR1_MSTR;
-}
-
-void SPI_CR2_setup(void) {
-	// Set Data Length to eight bits
-	SPI1->CR2 &= ~(SPI_CR2_DS_Msk);
-	SPI1->CR2 |= (0x7U << SPI_CR2_DS_Pos);
-
-	// RXNE flag triggered when FIFO level >= 8 bits
-	SPI1->CR2 |= SPI_CR2_FRXTH;
-
-	// Also just set enable bit here instead of another function
-	SPI1->CR1 |= SPI_CR1_SPE;
-
-	// Set the interrupt flags, so that the TX and RX buffers spike the interrupt upon hitting their thresholds
-//	SPI1->CR2 |= SPI_CR2_TXEIE;
-//	SPI1->CR2 |= SPI_CR2_RXNEIE;
-}
-
-
-/* Drop CS line to low
- *
- * While TX buffer is three or more out of four bytes full, poll
- *
- * Once TX is empty, load in 0x84, from there hardware handles transmission of byte
- *
- * While the RX buffer is empty, poll
- *
- * Once RX not empty, raise CS line to high and return whats in shift register
- */
-uint8_t SPI_SEND_BYTE(void) {
-	incoming_idx = 0;
-	outgoing_idx = 0;
-	// Pull chip select low, to indicate communication
-	GPIOA->ODR &= ~(1U << 4);
-
-	// while TX buffer not empty, keep polling
-	// once empty give it byte
-	while(outgoing_idx < TRANSFER_LEN) {
-		// Check if bit 1 is 0
-		while (!(SPI1->SR & SPI_SR_TXE));
-
-		*(__IO uint8_t *)&SPI1->DR = transfer_arr[outgoing_idx]; // Sample Data to send 0x84 | 0b 1000 0100
-		outgoing_idx++;
-
-		while (!(SPI1->SR & SPI_SR_RXNE)); // Poll until RX buffer has a byte in it
-		incoming_arr[incoming_idx] = *(__IO uint8_t *)&SPI1->DR;
-		incoming_idx++;
-	}
-
-	while (SPI1->SR & SPI_SR_BSY); // Poll until shift register is not busy in transmission
-
-	GPIOA->ODR |= (1U << 4);
-
-	return incoming_arr[incoming_idx - 1]; // Return last element from the list
 }

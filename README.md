@@ -116,6 +116,60 @@ Total Function Execution Time: 150.50 μs measured with GPIO toggle, from time o
 CPU Blocking Overhead: 100%, the CPU is blocked from other execution for the entire 150.50 μs of this four-byte transfer
 Driver API Software Overhead: 11 μs due to several vital operations such as the function prologue + epilogue, pointer arithmetic, and GPIOA writes for setting the CS.  This is detailed below.
 
+Latency Bottlenecks:
+As for throughput, once the first bit gets sents / receieved, the SPI bus usage is at 100% exactly, as it 
+takes 128 μs to complete all 32 clock cycles.  The real bottleneck right now in terms of speed other than SPI Clock Frequency 
+is the latency of transitionary periods, which there are four of.
+
+1. Function Call to CS Line Low latency: 5.50 - 6.00 μs
+2. CS Line Low to First SPI Clock Edge Latency: 11.00 - 11.50 μs
+3. End of Last Clock Cycle to CS Line High Latency: 0.00 μs
+4. CS Line High to Return to Main Latency: 2.50 - 3.00 μs
+
+## Function Call to CS Line Low latency
+
+#### Latency: 5.50 - 6.00 μs
+
+#### Latency Cause: BL + Function Epilogue + Setting incoming\_idx and outgoing\_idx to zero
+
+#### Dissasembly:
+
+08000216:   bl      0x8000250 <SPI_SEND_BYTE_POLLING>
+
+First lines inside the function....
+
+08000250:   push    {r7}
+08000252:   add     r7, sp, #0
+ 51       	incoming\_idx = 0;
+08000254:   ldr     r3, [pc, #156]  @ (0x80002f4 <SPI_SEND_BYTE_POLLING+164>)
+08000256:   movs    r2, #0
+08000258:   strb    r2, [r3, #0]
+ 52       	outgoing\_idx = 0;
+0800025a:   ldr     r3, [pc, #156]  @ (0x80002f8 <SPI_SEND_BYTE_POLLING+168>)
+0800025c:   movs    r2, #0
+0800025e:   strb    r2, [r3, #0]
+
+Looking at the Cortex-M4 Technical Reference Manual, we can see the number of clock cycles that an instruction from the 
+ARMv7-M Thumb instruction set takes to execute.
+
+Total: 4 clock cycles
+Due to the 32-bit instruction that actually spans across two words, and the fact this call is a branching instruction, we 
+can say this takes roughly 3 to 4 clock cycles.
+
+Total: 1 clock cycles
+Pushing the single register r7 onto the stack takes a flat 1 clock cycle.
+
+Total: 10 clock cycles
+Now, setting the two variables to zero takes a load (ldr) which is PC relative, so that is 2 clock cycles.
+Moving a literal into a register is just 1 clock cycle.
+Lastly, storing a byte is 2 clock cycles.
+
+
+This comes out to about 15 clock cycles.  Taking a look at this it is clear that the biggest latency bottleneck here 
+by a long shot is the variable setting.  Reducing those two variable write times as well as removing function call overhead 
+could significantly reduce function call to CS-Low latency.
+ 
+
 ### Waveform Progression
 
 <img width="1443" height="723" alt="Screenshot 2026-07-06 at 4 38 49 PM" src="https://github.com/user-attachments/assets/07e1fef4-ecf4-41c4-9064-fb66adca717a" />
