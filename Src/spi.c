@@ -26,8 +26,8 @@ volatile uint8_t transfer_arr[TRANSFER_LEN] = {0x24, 0x48, 0x11, 0x54};
 
 volatile uint8_t incoming_arr[TRANSFER_LEN];
 
-volatile uint8_t incoming_idx = 0;
-volatile uint8_t outgoing_idx = 0;
+//uint8_t incoming_idx = 0;
+//uint8_t outgoing_idx = 0;
 
 
 void SPI_Setup(void) {
@@ -47,30 +47,6 @@ void SPI_Setup(void) {
  *
  * Once RX not empty, raise CS line to high and return whats in shift register
  */
-void SPI_SEND_BYTE_POLLING(void) {
-	incoming_idx = 0;
-	outgoing_idx = 0;
-	// Pull chip select low, to indicate communication
-	GPIOA->ODR &= ~(1U << 4);
-
-	// while TX buffer not empty, keep polling
-	// once empty give it byte
-	while(outgoing_idx < TRANSFER_LEN) {
-		// Check if bit 1 is 0
-		while (!(SPI1->SR & SPI_SR_TXE));
-
-		*(__IO uint8_t *)&SPI1->DR = transfer_arr[outgoing_idx]; // Sample Data to send 0x84 | 0b 1000 0100
-		outgoing_idx++;
-
-		while (!(SPI1->SR & SPI_SR_RXNE)); // Poll until RX buffer has a byte in it
-		incoming_arr[incoming_idx] = *(__IO uint8_t *)&SPI1->DR;
-		incoming_idx++;
-	}
-
-	while (SPI1->SR & SPI_SR_BSY); // Poll until shift register is not busy in transmission
-
-	GPIOA->ODR |= (1U << 4);
-}
 
 
 
