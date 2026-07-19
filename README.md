@@ -126,28 +126,32 @@ is the latency of transitionary periods, which there are four of.
 3. End of Last Clock Cycle to CS Line High Latency: 0.00 μs
 4. CS Line High to Return to Main Latency: 2.50 - 3.00 μs
 
+
 ## Function Call to CS Line Low latency
 
 #### Latency: 5.50 - 6.00 μs
 
+<img width="1247" height="634" alt="Screenshot 2026-07-18 at 4 13 53 PM" src="https://github.com/user-attachments/assets/fb9b6e1a-1541-4bd9-b95a-4993572af420" />
+
 #### Latency Cause: BL + Function Epilogue + Setting incoming\_idx and outgoing\_idx to zero
 
-#### Dissasembly:
+#### Dissassembly:
 
-08000216:   bl      0x8000250 <SPI_SEND_BYTE_POLLING>
+      08000216:   bl      0x8000250 <SPI_SEND_BYTE_POLLING>
 
 First lines inside the function....
 
-08000250:   push    {r7}
-08000252:   add     r7, sp, #0
- 51       	incoming\_idx = 0;
-08000254:   ldr     r3, [pc, #156]  @ (0x80002f4 <SPI_SEND_BYTE_POLLING+164>)
-08000256:   movs    r2, #0
-08000258:   strb    r2, [r3, #0]
- 52       	outgoing\_idx = 0;
-0800025a:   ldr     r3, [pc, #156]  @ (0x80002f8 <SPI_SEND_BYTE_POLLING+168>)
-0800025c:   movs    r2, #0
-0800025e:   strb    r2, [r3, #0]
+      08000250:   push    {r7}
+      08000252:   add     r7, sp, #0
+       51       	incoming\_idx = 0;
+
+      08000254:   ldr     r3, [pc, #156]  @ (0x80002f4 <SPI_SEND_BYTE_POLLING+164>)
+      08000256:   movs    r2, #0
+      08000258:   strb    r2, [r3, #0]
+       52       	outgoing\_idx = 0;
+      0800025a:   ldr     r3, [pc, #156]  @ (0x80002f8 <SPI_SEND_BYTE_POLLING+168>)
+      0800025c:   movs    r2, #0
+      0800025e:   strb    r2, [r3, #0]
 
 Looking at the Cortex-M4 Technical Reference Manual, we can see the number of clock cycles that an instruction from the 
 ARMv7-M Thumb instruction set takes to execute.
@@ -157,10 +161,12 @@ Due to the 32-bit instruction that actually spans across two words, and the fact
 can say this takes roughly 3 to 4 clock cycles.
 
 Total: 1 clock cycles
-Pushing the single register r7 onto the stack takes a flat 1 clock cycle.
+Pushing the single register r7 onto the stack takes a flat 2 clock cycles.
+The add zero is done purely in registers taking 1 clock cycle.
 
 Total: 10 clock cycles
-Now, setting the two variables to zero takes a load (ldr) which is PC relative, so that is 2 clock cycles.
+Now, setting the two variables to zero takes a load (ldr) which is PC relative, so that is 2 clock cycles.  Although we are doing a 
+read from Flash to grab the variable's address, that value was likely already cached, leading to relatively fast and reliable speeds.
 Moving a literal into a register is just 1 clock cycle.
 Lastly, storing a byte is 2 clock cycles.
 
@@ -168,6 +174,85 @@ Lastly, storing a byte is 2 clock cycles.
 This comes out to about 15 clock cycles.  Taking a look at this it is clear that the biggest latency bottleneck here 
 by a long shot is the variable setting.  Reducing those two variable write times as well as removing function call overhead 
 could significantly reduce function call to CS-Low latency.
+
+
+## Improving Function Call To CS-Low Latency
+
+Taking into consideration the latency bottlenecks we found above, I made some design decisions and subsequent changes to reduce latency.
+Firstly, in order to remove the function prologue latency, I wanted to avoid the branch and link instruction and have the compiler place 
+the SPI_SEND_BYTE_POLLING() function's instruction addresses sequentially in memory following the preceding code.
+I did this simple by making the function inline so that it gets compiled how I intended above.
+
+
+
+Secondly, there was the largest bottleneck of taking roughly 10 clock cycles to set two uint8_t's at the beginning of each SPI_SEND_BYTE_POLLING() 
+function call.  To address this I took a close look at the properties of those two variables, such as when they are read, when they are written too, by 
+which "thread" of execution.  It became clear that my previous design decisions had been purely code organization focused, and not performance-focused.
+Thus, I moved the declaration and definition of the variables directly into the function itself, and removed its volatile property, because I realized two things:
+
+1. These variables are not used by any function other than SPI_SEND_BYTE_POLLING(), so they do not need to be global variables as they were before.
+
+2. These variables can not be accessed by any other thread of execution, such as an ISR.  Thus, they do not need to be pulled from RAM for every read or write.
+   Since the variables sit solely in the function and never get passed out, they don't even need to be at a memory address, allowing the compiler to assign them
+   to only a register for the duration of the function.
+
+#### After these changes, here is the new disassembly:
+
+
+      23        		Toggle_Profile_Pin_High();
+      0800020e:   mov.w   r3, #1207959552 @ 0x48000000
+      08000212:   movs    r2, #2
+      08000214:   str     r2, [r3, #24]
+      25        	uint8_t incoming_idx = 0;
+      08000216:   movs    r3, #0
+      08000218:   strb    r3, [r7, #7]
+      26        	uint8_t outgoing_idx = 0;
+      0800021a:   movs    r3, #0
+      0800021c:   strb    r3, [r7, #6]
+
+Based on the disassembly, it is clear that our five clock-cycle zero-assignment operations are now only three clock cycles.  One clock cycle for the move instructions, and 
+two for the store instructions, totalling six clock cycles for the two assignments.
+
+We also see that in this continuous snippet of instructions, there is absolutely zero function call overhead now due to inlining.  The lack of the BL instruction + the function 
+prologue saved us another four clock cycles.
+
+## In total, we eliminated eight clock cycles!
+
+
+
+
+### Improved Function Call To CS-Low Latency Waveform
+
+<img width="1249" height="639" alt="Screenshot 2026-07-18 at 5 08 12 PM" src="https://github.com/user-attachments/assets/5736b505-fa00-41bb-9678-4ab00dfa340f" />
+
+We reduced latency from 5.5 μs to only 2.5 μs, cutting down the Function Call to CS-Low Latency by 54%.
+
+<img width="1249" height="628" alt="Screenshot 2026-07-19 at 2 42 48 AM" src="https://github.com/user-attachments/assets/d9f97586-e3a4-413c-8998-206ef3de6edd" />
+
+In the image above, we can see we were also able to cut down the CS-High to main() return latency from 2.5 μs to only 1 μs, rendering a 60% reduction in latency from CS-High to the following instruction in main().
+This is definitely attributed to the removal of the function call through inlining, which conveniently removed the function epilogue as well.  We can see that in this disassembly:
+
+      46        	GPIOA->ODR |= (1U << 4);
+      08000284:   mov.w   r3, #1207959552 @ 0x48000000
+      08000288:   ldr     r3, [r3, #20]
+      0800028a:   mov.w   r2, #1207959552 @ 0x48000000
+      0800028e:   orr.w   r3, r3, #16
+      08000292:   str     r3, [r2, #20]
+      47        }
+      08000294:   nop     
+      25        		Toggle_Profile_Pin_Low();
+      08000296:   mov.w   r3, #1207959552 @ 0x48000000
+      0800029a:   movs    r2, #2
+      0800029c:   str     r2, [r3, #40]   @ 0x28
+
+Clearly, there is only the no-op instruction that was placed in between CS-High and Toggle_Profile_Pin_Low, with no function epilogue instructions from before.
+
+## Updated Latency Values
+
+1. Function Call to CS Line Low latency: 2.50 μs (54% latency reduction from initial build)
+2. CS Line Low to First SPI Clock Edge Latency: 11.00 - 11.50 μs
+3. End of Last Clock Cycle to CS Line High Latency: 0.00 μs
+4. CS Line High to Return to Main Latency: 1.00 μs (60% latency reduction from initial build)
  
 
 ### Waveform Progression
