@@ -46,5 +46,7 @@ __attribute__((always_inline)) inline void SPI_SEND_BYTE_POLLING(void) {
 	GPIOA->ODR |= (1U << 4);
 }
 
+void SPI1_IRQHandler(void);
+
 
 #endif // SPI_H_

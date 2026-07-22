@@ -31,6 +31,8 @@ volatile uint8_t incoming_arr[TRANSFER_LEN];
 
 
 void SPI_Setup(void) {
+	NVIC_EnableIRQ(SPI1_IRQn);
+
 	clock_init();
 	GPIO_init();
 	SPI_CR1_setup();
@@ -115,6 +117,19 @@ static void SPI_CR2_setup(void) {
 	SPI1->CR1 |= SPI_CR1_SPE;
 
 	// Set the interrupt flags, so that the TX and RX buffers spike the interrupt upon hitting their thresholds
-//	SPI1->CR2 |= SPI_CR2_TXEIE;
-//	SPI1->CR2 |= SPI_CR2_RXNEIE;
+	SPI1->CR2 |= SPI_CR2_TXEIE;
+	SPI1->CR2 |= SPI_CR2_RXNEIE;
+}
+
+void SPI1_IRQHandler(void) {
+    // Jump into this ISR for byte transfers
+
+
+	// Pseudo
+	/*
+	 * Interrupt fires
+	 * bounce right into here
+	 * if (RXNE) -> we know that at least the RX having a byte fired the interrupt, so service it(pop off, add to incoming array, increment incoming array pointer)
+	 * if (TXE) -> we know that at least the TX being empty fired the interrupt, so service that(push to TX buffer + incr outgoing array pointer)
+	 */
 }
