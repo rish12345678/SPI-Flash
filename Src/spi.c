@@ -26,8 +26,8 @@ volatile uint8_t transfer_arr[TRANSFER_LEN] = {0x24, 0x48, 0x11, 0x54};
 
 volatile uint8_t incoming_arr[TRANSFER_LEN];
 
-//uint8_t incoming_idx = 0;
-//uint8_t outgoing_idx = 0;
+uint8_t incoming_idx = 0;
+uint8_t outgoing_idx = 0;
 
 
 void SPI_Setup(void) {
@@ -38,6 +38,19 @@ void SPI_Setup(void) {
 	SPI_CR1_setup();
 	SPI_CR2_setup();
 }
+
+void SPI_IT_Trigger(void) {
+	// Reset array idx values before sending new array of bytes
+	incoming_idx = 0;
+	outgoing_idx = 0;
+
+	CS_LOW;
+
+	// Allow RXNE and TXE to send interrupt trigger to NVIC, kicking off interrupt
+	SPI1->CR2 |= SPI_CR2_RXNEIE;
+	SPI1->CR2 |= SPI_CR2_TXEIE;
+}
+
 
 /* Drop CS line to low
  *
@@ -83,7 +96,7 @@ static void GPIO_init(void) {
 	GPIOA->MODER &= ~(GPIO_MODER_MODE4_Msk);
 	GPIOA->MODER |= GPIO_MODER_MODE4_0;
 
-	GPIOA->ODR |= (1U << 4);
+//	GPIOA->ODR |= (1U << 4);
 }
 
 static void SPI_CR1_setup(void) {
@@ -117,13 +130,11 @@ static void SPI_CR2_setup(void) {
 	SPI1->CR1 |= SPI_CR1_SPE;
 
 	// Set the interrupt flags, so that the TX and RX buffers spike the interrupt upon hitting their thresholds
-	SPI1->CR2 |= SPI_CR2_TXEIE;
-	SPI1->CR2 |= SPI_CR2_RXNEIE;
+	// TX will spike as soon as that line runs
 }
 
 void SPI1_IRQHandler(void) {
     // Jump into this ISR for byte transfers
-
 
 	// Pseudo
 	/*
@@ -132,4 +143,33 @@ void SPI1_IRQHandler(void) {
 	 * if (RXNE) -> we know that at least the RX having a byte fired the interrupt, so service it(pop off, add to incoming array, increment incoming array pointer)
 	 * if (TXE) -> we know that at least the TX being empty fired the interrupt, so service that(push to TX buffer + incr outgoing array pointer)
 	 */
+
+	// if RX has a byte it in (threshold set to eight bits)
+	if ((SPI1->SR & SPI_SR_RXNE) && (SPI1->CR2 & SPI_CR2_RXNEIE)) {
+		// Read plus incr incoming_idx, to service and turn off ringing interrupt
+		incoming_arr[incoming_idx] = *(__IO uint8_t *)&SPI1->DR;
+		incoming_idx++;
+
+		// if incoming_idx gets sent past the end of arr (last byte has been sent)
+		// then turn of TXE interrupt sending, TXE can have any flag, wont deciding sending interrupt to NVIC
+		if (incoming_idx >= TRANSFER_LEN) {
+			SPI1->CR2 &= ~SPI_CR2_RXNEIE;
+			while (SPI1->SR & SPI_SR_BSY);
+			CS_HIGH;
+		}
+	}
+
+	// if TXEIE not set, never enter second condition -> All bytes been sent
+	// if TX is empty (the one byte no longer sits there)
+	if ((SPI1->SR & SPI_SR_TXE) && (SPI1->CR2 & SPI_CR2_TXEIE)) {
+		// Write to the TX buffer + incr outgoing_idx, turns off this ringing interrupt
+		*(__IO uint8_t *)&SPI1->DR = transfer_arr[outgoing_idx]; // Sample Data to send 0x84 | 0b 1000 0100
+		outgoing_idx++;
+
+		// if outgoing_idx gets sent past the end of arr (last byte has been sent)
+		// then turn of TXE interrupt sending, TXE can have any flag, wont deciding sending interrupt to NVIC
+		if (outgoing_idx >= TRANSFER_LEN) {
+			SPI1->CR2 &= ~SPI_CR2_TXEIE;
+		}
+	}
 }

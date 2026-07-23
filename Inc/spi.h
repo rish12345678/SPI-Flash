@@ -12,8 +12,8 @@ extern volatile uint8_t transfer_arr[TRANSFER_LEN];
 // Array to capture incoming bytes
 extern volatile uint8_t incoming_arr[TRANSFER_LEN];
 //
-//extern uint8_t incoming_idx;
-//extern uint8_t outgoing_idx;
+extern uint8_t incoming_idx;
+extern uint8_t outgoing_idx;
 
 /*
  * FUNCTION DECLARATIONS
@@ -21,9 +21,15 @@ extern volatile uint8_t incoming_arr[TRANSFER_LEN];
 
 void SPI_Setup(void);
 
+void SPI_IT_Trigger(void);
+
+void SPI1_IRQHandler(void);
+
+/*
+ * FUNCTION DEFINITION ---- Inline Only
+ */
+
 __attribute__((always_inline)) inline void SPI_SEND_BYTE_POLLING(void) {
-	uint8_t incoming_idx = 0;
-	uint8_t outgoing_idx = 0;
 	// Pull chip select low, to indicate communication
 	GPIOA->ODR &= ~(1U << 4);
 
@@ -45,8 +51,6 @@ __attribute__((always_inline)) inline void SPI_SEND_BYTE_POLLING(void) {
 
 	GPIOA->ODR |= (1U << 4);
 }
-
-void SPI1_IRQHandler(void);
 
 
 #endif // SPI_H_
