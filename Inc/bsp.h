@@ -10,7 +10,7 @@
 
 #ifdef ENABLE_PROFILE
 	#define PROFILE_PIN_INIT() { \
-        RCC->AHB2ENR |= RCC_AHB2ENR_GPIOAEN; \  // provide clock as well, SPI_SETUP() is late
+        RCC->AHB2ENR |= RCC_AHB2ENR_GPIOAEN; \
         GPIOA->MODER &= ~(GPIO_MODER_MODE1_Msk); \
         GPIOA->MODER |= GPIO_MODER_MODE1_0; \
         GPIOA->OSPEEDR |= GPIO_OSPEEDR_OSPEED1_1; \

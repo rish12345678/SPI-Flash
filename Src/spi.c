@@ -41,6 +41,12 @@ void SPI_Setup(void) {
 
 void SPI_IT_Trigger(void) {
 	// Reset array idx values before sending new array of bytes
+
+	while (SPI1->SR & SPI_SR_RXNE) {
+		volatile uint8_t dummy = *(__IO uint8_t *)&SPI1->DR; // Clear RXNE by reading
+		(void)dummy;
+	}
+
 	incoming_idx = 0;
 	outgoing_idx = 0;
 
@@ -73,7 +79,7 @@ static void clock_init(void) {
 
 static void GPIO_init(void) {
 	// Start Profile Pin Low Before Transfer
-	GPIOA->BRR = (1U << 1);
+	 GPIOA->BRR = (1U << 1);
 
 
 
@@ -128,9 +134,6 @@ static void SPI_CR2_setup(void) {
 
 	// Also just set enable bit here instead of another function
 	SPI1->CR1 |= SPI_CR1_SPE;
-
-	// Set the interrupt flags, so that the TX and RX buffers spike the interrupt upon hitting their thresholds
-	// TX will spike as soon as that line runs
 }
 
 void SPI1_IRQHandler(void) {
@@ -145,6 +148,7 @@ void SPI1_IRQHandler(void) {
 	 */
 
 	// if RX has a byte it in (threshold set to eight bits)
+	Toggle_Profile_Pin_High();
 	if ((SPI1->SR & SPI_SR_RXNE) && (SPI1->CR2 & SPI_CR2_RXNEIE)) {
 		// Read plus incr incoming_idx, to service and turn off ringing interrupt
 		incoming_arr[incoming_idx] = *(__IO uint8_t *)&SPI1->DR;
@@ -172,4 +176,5 @@ void SPI1_IRQHandler(void) {
 			SPI1->CR2 &= ~SPI_CR2_TXEIE;
 		}
 	}
+	Toggle_Profile_Pin_Low();
 }

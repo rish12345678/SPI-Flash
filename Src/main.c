@@ -18,6 +18,7 @@ int main(void)
 	PROFILE_PIN_INIT();
 	// Now sets up SPI Peripheral + Interrupt Specifics
 	Toggle_Profile_Pin_High();
+	for (volatile int i = 0; i < 1000; i++); // Short delay so PulseView catches the pulse
 	Toggle_Profile_Pin_Low();
 	SPI_Setup();
 
