@@ -4,7 +4,7 @@ Register-level SPI driver for the STM32L476RG implemented entirely without HAL.
 
 ## Project Goal
 
-Rather than relying on STM32 HAL, this project develops an SPI peripheral driver directly from the reference manual.
+Rather than relying on STM32 HAL, this project develops a SPI peripheral driver directly from the reference manual.
 
 My emphasis is on:
 
@@ -282,3 +282,8 @@ Time to Send Several Bytes: N/A; due to polling, we would have to guess a short 
 <img width="1246" height="636" alt="Screenshot 2026-07-22 at 6 06 18 PM" src="https://github.com/user-attachments/assets/11102111-899d-49b8-a976-4ff72f98fc0b" />
 
 Fig 1.5:  This is the initial waveform of SPI sending over a single array of four uint8_t's. Almost every pin has something wrong with it.  I will continue documenting what I figure out through debugging this non-blocking version.
+
+<img width="1246" height="757" alt="Screenshot 2026-07-22 at 10 48 35 PM" src="https://github.com/user-attachments/assets/738dfc93-f1f0-499d-bc15-39ab5e898102" />
+
+Fig 1.6:  After stepping through the code and looking at SPI peripheral register states, I noticed that immediately after gating clock to SPI, RXNE was set to 1, meaning there was some previous garbage value in there, making us enter the RXNE conditional(the first one) on the first interrupt, adding that to the incoming array and incrementing the pointer, before even adding the first value to the TX buffer that we want to send.  By first cleaning out the RX buffer of any extreneuous values, we got the CS line to match up with our transmission, going high only after all bytes have been sent.
+
