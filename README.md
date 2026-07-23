@@ -255,7 +255,7 @@ Clearly, there is only the no-op instruction that was placed in between CS-High 
 4. CS Line High to Return to Main Latency: 1.00 μs (60% latency reduction from initial build)
  
 
-### Waveform Progression
+### Polling Waveform Progression
 
 <img width="1443" height="723" alt="Screenshot 2026-07-06 at 4 38 49 PM" src="https://github.com/user-attachments/assets/07e1fef4-ecf4-41c4-9064-fb66adca717a" />
 Fig 1.1: Initial waveform Sending Dummy Byte (0x24) Over MOSI Line
@@ -275,4 +275,10 @@ Time to Send Several Bytes: N/A; due to polling, we would have to guess a short 
 
 
 
+### Interrupts Waveform Progression
 
+
+
+<img width="1246" height="636" alt="Screenshot 2026-07-22 at 6 06 18 PM" src="https://github.com/user-attachments/assets/11102111-899d-49b8-a976-4ff72f98fc0b" />
+
+Fig 1.5:  This is the initial waveform of SPI sending over a single array of four uint8_t's. Almost every pin has something wrong with it.  I will continue documenting what I figure out through debugging this non-blocking version.
