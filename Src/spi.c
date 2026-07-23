@@ -1,6 +1,7 @@
 #include "spi.h"
 #include "bsp.h"
 
+
 /*
  * Private Setup Functions
  */
@@ -42,15 +43,17 @@ void SPI_Setup(void) {
 void SPI_IT_Trigger(void) {
 	// Reset array idx values before sending new array of bytes
 
+	// to Drain the RX Buffer
+	// while RX buffer not empty, pop of RX buffer and do dummy usage to avoid compiler warnings
 	while (SPI1->SR & SPI_SR_RXNE) {
-		volatile uint8_t dummy = *(__IO uint8_t *)&SPI1->DR; // Clear RXNE by reading
+		volatile uint8_t dummy = *(__IO uint8_t *)&SPI1->DR;
 		(void)dummy;
 	}
 
 	incoming_idx = 0;
 	outgoing_idx = 0;
 
-	CS_LOW;
+	CS_LOW();
 
 	// Allow RXNE and TXE to send interrupt trigger to NVIC, kicking off interrupt
 	SPI1->CR2 |= SPI_CR2_RXNEIE;
@@ -78,23 +81,28 @@ static void clock_init(void) {
 }
 
 static void GPIO_init(void) {
-	// Start Profile Pin Low Before Transfer
-	 GPIOA->BRR = (1U << 1);
 
-
+	Toggle_Profile_Pin_High();
 
 	// Set GPIO Port A pins 5, 6, 7 to AF - Part of SPI bus now
 	GPIOA->MODER &= ~(GPIO_MODER_MODE5 | GPIO_MODER_MODE6 | GPIO_MODER_MODE7);
 	GPIOA->MODER |= (GPIO_MODER_MODE5_1 | GPIO_MODER_MODE6_1 | GPIO_MODER_MODE7_1);
+	Toggle_Profile_Pin_Low();
+
+
+
+
 
 	// Set these four pins to belong to the SPI1 Peripheral (Will hardcode chip select pin PA4)
 	GPIOA->AFR[0] &= ~(0xF << GPIO_AFRL_AFSEL5_Pos | 0xF << GPIO_AFRL_AFSEL6_Pos | 0xF << GPIO_AFRL_AFSEL7_Pos); // Clear for pins 5 6 7
-
 	GPIOA->AFR[0] |= ( (GPIO_AFRL_AFSEL5_0 | GPIO_AFRL_AFSEL5_2) | (GPIO_AFRL_AFSEL6_0 | GPIO_AFRL_AFSEL6_2) | (GPIO_AFRL_AFSEL7_0 | GPIO_AFRL_AFSEL7_2));
+
+
+	Toggle_Profile_Pin_High();
 
 	// Set Pin speed for SCK, MISO, and MOSI pins to high for sharp squarish clock edges
 	GPIOA->OSPEEDR |= (GPIO_OSPEEDR_OSPEED5_1 | GPIO_OSPEEDR_OSPEED6_1 | GPIO_OSPEEDR_OSPEED7_1);
-
+	Toggle_Profile_Pin_Low();
 
 	// Initialize the Chip Select Pin PA4, as a traditional output, will drive high, low when needed
 
@@ -113,10 +121,11 @@ static void SPI_CR1_setup(void) {
 	SPI1->CR1 &= ~(SPI_CR1_BR_Msk);
 	SPI1->CR1 |= (SPI_CR1_BR_0 | SPI_CR1_BR_1);
 
-
 	// Set CPOL to zero -> Clock at 0 when idle
 	// Set CPHA to zero -> Data capture occurs on first clock edge (rising edge)
 	SPI1->CR1 &= ~(SPI_CR1_CPOL_Msk | SPI_CR1_CPHA_Msk); // Standard for SPI Flash
+
+
 
 	// ----*  *~* *~* *~* *~*
 	// Software Slave Management and Master Mode
@@ -159,7 +168,7 @@ void SPI1_IRQHandler(void) {
 		if (incoming_idx >= TRANSFER_LEN) {
 			SPI1->CR2 &= ~SPI_CR2_RXNEIE;
 			while (SPI1->SR & SPI_SR_BSY);
-			CS_HIGH;
+			CS_HIGH();
 		}
 	}
 

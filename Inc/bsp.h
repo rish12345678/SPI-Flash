@@ -3,10 +3,15 @@
 
 #include "stm32l476xx.h"
 
+/*
+ * TOGGLE FOR PROFILE PIN USAGE
+ */
+#define ENABLE_PROFILE // Turn on Profiling Pin Settings
+
 #define PROFILE_GPIO_PORT GPIOA
 #define PROFILE_PIN 1
-#define CS_LOW (GPIOA->ODR &= ~(1U << 4))
-#define CS_HIGH (GPIOA->ODR |= (1U << 4))
+#define CS_LOW() (GPIOA->ODR &= ~(1U << 4))
+#define CS_HIGH() (GPIOA->ODR |= (1U << 4))
 
 #ifdef ENABLE_PROFILE
 	#define PROFILE_PIN_INIT() { \
