@@ -14,7 +14,10 @@
 
 int main(void)
 {
-	bool done_check = false;
+// // THIS IS ONLY FOR SINGLE TIME LOOP BACK TESTS
+//	bool done_check = false;
+//	((void) done_check);
+
 	PROFILE_PIN_INIT();
 	// Now sets up SPI Peripheral + Interrupt Specifics
 	Toggle_Profile_Pin_High();
@@ -22,36 +25,42 @@ int main(void)
 	Toggle_Profile_Pin_Low();
 	SPI_Setup();
 
-	SPI_IT_Trigger();
-
 
 //	Toggle_Profile_Pin_Low();
 //	PROFILE_PIN_INIT();
 
-	for (volatile int i = 0; i < 50; i++);
+
+//	for (int j = 0; j < 2; j++) {
+//		Toggle_Profile_Pin_Low();
+//		for (volatile int i = 0; i < 2; i++);
+//		Toggle_Profile_Pin_High();
+//		for (volatile int i = 0; i < 2; i++);
+//	}
+
+
 //
 	for (;;) {
-		if (!done_check) {
-			for (int i = 0; i < TRANSFER_LEN; i++) {
-				if (incoming_arr[i] == transfer_arr[i]) {
-					Toggle_Profile_Pin_High();
-					for (volatile int i = 0; i < 10; i++);
-					Toggle_Profile_Pin_Low();
-					for (volatile int i = 0; i < 50; i++);
-				}
-				done_check = true;
+		SPI_Interrupt_Send_Payload(transfer_arr, incoming_arr, 4);
+		for (volatile int i = 0; i < 100; i++);
+
+		/*
+		 * Loop back test Here
+		 */
+
+//		if (!done_check) {
+		for (int i = 0; i < user_def_transfer_len; i++) {
+			if (incoming_arr[i] != transfer_arr[i]) {
+				Toggle_Profile_Pin_High();
+				for (volatile int i = 0; i < 10; i++);
+				Toggle_Profile_Pin_Low();
+				for (volatile int i = 0; i < 50; i++);
 			}
+//			done_check = true;
 		}
-//		Toggle_Profile_Pin_High();
-//		SPI_SEND_BYTE_POLLING(); // Should load up incoming_arr[] with {0x24, 0x48, 0x11, 0x54}
-//		Toggle_Profile_Pin_Low();
-//
-////		for (int i = 0; i < TRANSFER_LEN; i++) {
-////			if (!(transfer_arr[i] == incoming_arr[i])) {
-////				while (1);
-////			}
-////		}
-//		for(volatile int i = 0; i < 4000; i++); // ~10 ms between transmissions
+//		}
+
+		for (volatile int i = 0; i < 10000; i++);
+
 	}
 
 }

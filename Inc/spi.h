@@ -4,26 +4,41 @@
 #include <stdint.h>
 #include "stm32l476xx.h"
 
-#define TRANSFER_LEN 4 // How many bytes we are sending
+#define MAX_TRANSFER_LEN 100 // How many bytes we are sending
 
 // Array to hold outgoing bytes
-extern volatile uint8_t transfer_arr[TRANSFER_LEN];
+extern volatile uint8_t transfer_arr[MAX_TRANSFER_LEN];
 
 // Array to capture incoming bytes
-extern volatile uint8_t incoming_arr[TRANSFER_LEN];
+extern volatile uint8_t incoming_arr[MAX_TRANSFER_LEN];
+
+
+
 //
-extern uint8_t incoming_idx;
-extern uint8_t outgoing_idx;
+extern volatile uint8_t* ptr_TXData_Base;
+extern volatile uint8_t* ptr_RXData_Base;
+
+
+extern volatile uint8_t* ptr_TXData;
+extern volatile uint8_t* ptr_RXData;
+
+extern volatile uint32_t user_def_transfer_len;
 
 /*
  * FUNCTION DECLARATIONS
  */
 
+
+
+// Sets up configurations for the SPI Peripheral before triggering a transmission
 void SPI_Setup(void);
 
-void SPI_IT_Trigger(void);
-
+// This is the code that executes in the ISR every time the hardware triggers an interrupt in the SPI's IT line
 void SPI1_IRQHandler(void);
+
+// This trigger function sends over a pay load starting at transfer_PTR of length trans_len with received
+// bytes of equal length starting at receive_PTR
+void SPI_Interrupt_Send_Payload(volatile uint8_t* transfer_PTR, volatile uint8_t* receive_PTR, uint32_t trans_len);
 
 /*
  * FUNCTION DEFINITION ---- Inline Only
@@ -35,16 +50,16 @@ __attribute__((always_inline)) inline void SPI_SEND_BYTE_POLLING(void) {
 
 	// while TX buffer not empty, keep polling
 	// once empty give it byte
-	while(outgoing_idx < TRANSFER_LEN) {
+	while(ptr_TXData - ptr_TXData_Base < MAX_TRANSFER_LEN) {
 		// Check if bit 1 is 0
 		while (!(SPI1->SR & SPI_SR_TXE));
 
-		*(__IO uint8_t *)&SPI1->DR = transfer_arr[outgoing_idx]; // Sample Data to send 0x84 | 0b 1000 0100
-		outgoing_idx++;
+		*(__IO uint8_t *)&SPI1->DR = *ptr_TXData; // Sample Data to send 0x84 | 0b 1000 0100
+		ptr_TXData++;
 
 		while (!(SPI1->SR & SPI_SR_RXNE)); // Poll until RX buffer has a byte in it
-		incoming_arr[incoming_idx] = *(__IO uint8_t *)&SPI1->DR;
-		incoming_idx++;
+		*ptr_RXData = *(__IO uint8_t *)&SPI1->DR;
+		ptr_RXData++;
 	}
 
 	while (SPI1->SR & SPI_SR_BSY); // Poll until shift register is not busy in transmission
