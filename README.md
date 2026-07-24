@@ -292,3 +292,20 @@ Fig 1.6:  After stepping through the code and looking at SPI peripheral register
 <img width="1248" height="630" alt="Screenshot 2026-07-23 at 1 47 17 PM" src="https://github.com/user-attachments/assets/a38b4bc6-68ea-4b7d-9aec-080406e41f00" />
 
 Fig 1.7:  There is still a small dip and then reset right before CS goes low; this happens only in the GPIO_init() helper function, where the pins are undergoing different changes, such as MODER changes and AFR changes.  Since this happens once at setup, pre-transmission (CS is still high), we can effectively ignore it, keeping the transmission untampered with and not adding to latency.  The actual transmission is coming across the lines perfectly.  The only thing I can think to make the transmission better, which it appears to only affect the first transmission is that the CS line goes low long before the transmission actually starts, and even clock and MOSI lines are set to their ready state to send the first bit.  Since it is a falling clock edge, meaning it is pushing a voltage or not onto the line and not sampling the line, it shouldn't affect the transmission, but it does end up making the CS Line Low to First SPI Clock Edge Latency 87.75 μs, compared to the 11.00 - 11.50 μs we got for the same interval in the blocking version.
+
+
+
+
+<img width="1251" height="632" alt="Screenshot 2026-07-23 at 6 56 33 PM" src="https://github.com/user-attachments/assets/8b88665b-c149-46fc-93e3-bf9aacdec58b" />
+<img width="1249" height="629" alt="Screenshot 2026-07-23 at 6 57 28 PM" src="https://github.com/user-attachments/assets/f02a07a8-eabf-4afb-8152-b0f4b433fda2" />
+
+
+
+
+Fig 1.8 & Fig 1.9: Just for a sanity check I made the loopback test such that if any bytes that was sent out on the MOSI line was different from what we got back on the MISO line, we raise the profile pin up and drop it after an interval following the transmission.  I made sure this is working with a simple transmission kick-off + changing too values in the incoming bytes array as such:
+
+      incoming_arr[0] = 0x00;
+      incoming_arr[3] = 0xFF;
+
+
+Then I ran the profiler validation code to check for the incorrect bytes in a loop.  In the first picture we see two jumps on the profile pin indicating two incorrect bytes in the incoming_arr, and then in the second picture I got rid of the two lines of code above, and it can back to the second picture where there are no jumps of the profiler line.
