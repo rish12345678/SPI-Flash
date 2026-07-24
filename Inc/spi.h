@@ -13,8 +13,6 @@ extern volatile uint8_t transfer_arr[MAX_TRANSFER_LEN];
 extern volatile uint8_t incoming_arr[MAX_TRANSFER_LEN];
 
 
-
-//
 extern volatile uint8_t* ptr_TXData_Base;
 extern volatile uint8_t* ptr_RXData_Base;
 
@@ -24,10 +22,29 @@ extern volatile uint8_t* ptr_RXData;
 
 extern volatile uint32_t user_def_transfer_len;
 
+
+
+
+/*
+ * SPI State Machine Type
+ */
+
+typedef enum {
+    SPI_READY_STATE = 0, // SPI peripheral is free for use
+	SPI_BUSY_STATE // SPI peripheral is busy in transmission
+} SPI_State_t;
+
+
+
 /*
  * FUNCTION DECLARATIONS
  */
 
+
+
+
+// SPI State Check Function
+SPI_State_t Get_Spi_State(void);
 
 
 // Sets up configurations for the SPI Peripheral before triggering a transmission
@@ -38,7 +55,9 @@ void SPI1_IRQHandler(void);
 
 // This trigger function sends over a pay load starting at transfer_PTR of length trans_len with received
 // bytes of equal length starting at receive_PTR
-void SPI_Interrupt_Send_Payload(volatile uint8_t* transfer_PTR, volatile uint8_t* receive_PTR, uint32_t trans_len);
+
+// HOW TO CALL: Make sure to just through this call in an if, if it evals to true the transmission went through
+bool SPI_Interrupt_Send_Payload(volatile uint8_t* transfer_PTR, volatile uint8_t* receive_PTR, uint32_t trans_len);
 
 /*
  * FUNCTION DEFINITION ---- Inline Only

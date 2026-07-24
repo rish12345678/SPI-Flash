@@ -34,8 +34,16 @@ volatile uint8_t* ptr_RXData_Base;
 volatile uint8_t* ptr_TXData;
 volatile uint8_t* ptr_RXData;
 
-uint32_t user_def_transfer_len;
+volatile uint32_t user_def_transfer_len;
 
+// Sets the software state of the peripheral
+// Only this file and ISR should ever manage this state
+static volatile SPI_State_t state_spi = SPI_READY_STATE;
+
+
+/*
+ * Function Definitions
+ */
 
 void SPI_Setup(void) {
 	NVIC_EnableIRQ(SPI1_IRQn);
@@ -46,8 +54,14 @@ void SPI_Setup(void) {
 	SPI_CR2_setup();
 }
 
-void SPI_Interrupt_Send_Payload(volatile uint8_t* transfer_PTR, volatile uint8_t* receive_PTR, uint32_t trans_len) {
-	// Reset array idx values before sending new array of bytes
+SPI_State_t Get_Spi_State(void) {
+	return state_spi;
+}
+
+
+bool SPI_Interrupt_Send_Payload(volatile uint8_t* transfer_PTR, volatile uint8_t* receive_PTR, uint32_t trans_len) {
+	// Quick check for if SPI peripheral is in the middle of a transmission
+	if (state_spi == SPI_BUSY_STATE) return false;
 
 	// to Drain the RX Buffer
 	// while RX buffer not empty, pop of RX buffer and do dummy usage to avoid compiler warnings
@@ -70,6 +84,8 @@ void SPI_Interrupt_Send_Payload(volatile uint8_t* transfer_PTR, volatile uint8_t
 	// Allow RXNE and TXE to send interrupt trigger to NVIC, kicking off interrupt
 	SPI1->CR2 |= SPI_CR2_RXNEIE;
 	SPI1->CR2 |= SPI_CR2_TXEIE;
+
+	return true;
 }
 
 
@@ -181,6 +197,9 @@ void SPI1_IRQHandler(void) {
 			SPI1->CR2 &= ~SPI_CR2_RXNEIE;
 			while (SPI1->SR & SPI_SR_BSY);
 			CS_HIGH();
+
+			// After CS raises this transmission is over, set state machine to FREE / READY
+			state_spi = SPI_READY_STATE;
 		}
 	}
 
