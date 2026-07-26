@@ -1,3 +1,9 @@
+/*
+ * Constraints:
+ *
+ * 1. Can not transfer more than 100 bytes at once via a single interrupt trigger
+ */
+
 #include "../Inc/stm32l476xx.h"
 
 #include "spi.h"
@@ -20,9 +26,7 @@ int main(void)
 
 	PROFILE_PIN_INIT();
 	// Now sets up SPI Peripheral + Interrupt Specifics
-	Toggle_Profile_Pin_High();
-	for (volatile int i = 0; i < 1000; i++); // Short delay so PulseView catches the pulse
-	Toggle_Profile_Pin_Low();
+	BOUNCE_SINGLE_LONG_PROFILER();
 	SPI_Setup();
 
 
@@ -37,27 +41,36 @@ int main(void)
 //		for (volatile int i = 0; i < 2; i++);
 //	}
 
+	SPI_Interrupt_Send_Payload(transfer_arr, incoming_arr, 4);
+
 
 //
 	for (;;) {
-		SPI_Interrupt_Send_Payload(transfer_arr, incoming_arr, 4);
+		uint8_t man_code = incoming_arr[1];
+		if (Get_Spi_State() == 0) {
+			STUTTER_PROFILER();
+		}
 		for (volatile int i = 0; i < 100; i++);
-
+		((void) man_code);
 		/*
 		 * Loop back test Here
 		 */
 
-//		if (!done_check) {
-		for (int i = 0; i < user_def_transfer_len; i++) {
-			if (incoming_arr[i] != transfer_arr[i]) {
-				Toggle_Profile_Pin_High();
-				for (volatile int i = 0; i < 10; i++);
-				Toggle_Profile_Pin_Low();
-				for (volatile int i = 0; i < 50; i++);
-			}
-//			done_check = true;
-		}
+
+		if (incoming_arr[1] != 0xEF) BOUNCE_SINGLE_LONG_PROFILER();
+
+//
+////		if (!done_check) {
+//		for (int i = 0; i < user_def_transfer_len; i++) {
+//			if (incoming_arr[i] != transfer_arr[i]) {
+//				Toggle_Profile_Pin_High();
+//				for (volatile int i = 0; i < 10; i++);
+//				Toggle_Profile_Pin_Low();
+//				for (volatile int i = 0; i < 50; i++);
+//			}
+////			done_check = true;
 //		}
+////		}
 
 		for (volatile int i = 0; i < 10000; i++);
 

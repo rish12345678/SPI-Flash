@@ -1,3 +1,7 @@
+#include <stdbool.h>
+
+
+
 #include "spi.h"
 #include "bsp.h"
 
@@ -23,7 +27,7 @@ static void SPI_CR2_setup(void);
 
 
 // Global transmission coordination functions (ISR-Friendly)
-volatile uint8_t transfer_arr[MAX_TRANSFER_LEN] = {0x24, 0x48, 0x11, 0x54};
+volatile uint8_t transfer_arr[MAX_TRANSFER_LEN] = {0x9F, 0xFF, 0xFF, 0xFF};
 
 volatile uint8_t incoming_arr[MAX_TRANSFER_LEN];
 
@@ -61,7 +65,10 @@ SPI_State_t Get_Spi_State(void) {
 
 bool SPI_Interrupt_Send_Payload(volatile uint8_t* transfer_PTR, volatile uint8_t* receive_PTR, uint32_t trans_len) {
 	// Quick check for if SPI peripheral is in the middle of a transmission
-	if (state_spi == SPI_BUSY_STATE) return false;
+	if (state_spi == 1) return false;
+
+	// About to begin transmission, set busy state
+	state_spi = SPI_BUSY_STATE;
 
 	// to Drain the RX Buffer
 	// while RX buffer not empty, pop of RX buffer and do dummy usage to avoid compiler warnings
@@ -197,6 +204,8 @@ void SPI1_IRQHandler(void) {
 			SPI1->CR2 &= ~SPI_CR2_RXNEIE;
 			while (SPI1->SR & SPI_SR_BSY);
 			CS_HIGH();
+
+			STUTTER_PROFILER(); // Right before leaving the last transmission interrupt hit a double bounce
 
 			// After CS raises this transmission is over, set state machine to FREE / READY
 			state_spi = SPI_READY_STATE;
