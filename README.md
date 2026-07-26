@@ -253,6 +253,24 @@ Clearly, there is only the no-op instruction that was placed in between CS-High 
 2. CS Line Low to First SPI Clock Edge Latency: 11.00 - 11.50 μs
 3. End of Last Clock Cycle to CS Line High Latency: 0.00 μs
 4. CS Line High to Return to Main Latency: 1.00 μs (60% latency reduction from initial build)
+
+
+
+## Improving Interrupt Efficiency
+
+### Base Interrupt Efficiency:
+
+Measurement Objective: Quantify total CPU overhead, the time trapped inside the ISR, versus available background execution time during the total four-byte transmission.
+
+Compiler Optimization Level: -O0
+
+Total Transfer Time: 173.00 μs (CS Low to CS High)
+
+Cumulative ISR Execution Time: 132.25 μs (Over six total interrupt triggers)
+
+CPU Utilization Overhead: 76.45% (132.25 / 173.00)
+
+Processor Idle: 23.55% (40.75 μs)
  
 
 ### Polling Waveform Progression
