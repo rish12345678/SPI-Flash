@@ -33,4 +33,32 @@
 
 #endif
 
+#define STUTTER_PROFILER() \
+    do { \
+    	for (volatile int i = 0; i < 4; i++) { \
+			Toggle_Profile_Pin_High(); \
+			for (volatile int i = 0; i < 2; i++); \
+			Toggle_Profile_Pin_Low(); \
+		} \
+    } while(0)
+
+#define BOUNCE_TWO_PROFILER() \
+    do { \
+        Toggle_Profile_Pin_High(); \
+        for (volatile int i = 0; i < 2; i++); \
+        Toggle_Profile_Pin_Low(); \
+		for (volatile int i = 0; i < 2; i++); \
+		Toggle_Profile_Pin_High(); \
+        for (volatile int i = 0; i < 2; i++); \
+        Toggle_Profile_Pin_Low(); \
+    } while(0)
+
+
+#define BOUNCE_SINGLE_LONG_PROFILER() \
+    do { \
+        Toggle_Profile_Pin_High(); \
+        for (volatile int i = 0; i < 20; i++); \
+        Toggle_Profile_Pin_Low(); \
+    } while(0)
+
 #endif // BSP_H_

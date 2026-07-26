@@ -2,6 +2,7 @@
 #define SPI_H_
 
 #include <stdint.h>
+#include <stdbool.h>
 #include "stm32l476xx.h"
 
 #define MAX_TRANSFER_LEN 100 // How many bytes we are sending
