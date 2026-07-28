@@ -5,14 +5,18 @@
 #include <stdbool.h>
 
 // Main Opcodes
-
 #define FLASH_WRITE_EN_CMND 0x06
 #define FLASH_READ_STATUS_1_CMND 0x05
 #define FLASH_PAGE_PROGRAM_CMND 0x02
 #define FLASH_SECTOR_ERASE_CMND 0x20
 #define FLASH_READ_DATA_CMND 0x03
 
-#define FLASH_SR1_STATUS_MSK 0x01 // Check bit zero to see if write in progress
+#define FLASH_SR1_STATUS_MSK 0x01 // Check bit zero; 0 = free, 1 = busy
+
+#define DUMMY 0xFF;
+
+
+
 
 // Size of different addressable memory chunks in bytes
 /*
@@ -28,8 +32,6 @@
 
 
 // API
-
-uint8_t Flash_ReadStatus_1(void);
 void Flash_Poll_Until_Ready(void);
 void Flash_Set_Write_Enable(void);
 void Flash_Erase_Sector(uint32_t adr);
