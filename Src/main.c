@@ -1,7 +1,12 @@
 /*
  * Constraints:
  *
- * 1. Can not transfer more than 100 bytes at once via a single interrupt trigger
+ * 1. Can not transfer more than 260 bytes at once via a single interrupt trigger
+ *
+ * 2. In order to minimize copying contents between arrays and to maintain the interrupt-driven design of
+ *    this driver, when passing pay loads into driver functions always them only as pointers to global arrays.
+ *    Never pass local arrays, and if you would like to utilize a general use case array for transferring and
+ *    receiving bytes, use transfer_arr and incoming_arr
  */
 
 #include "../Inc/stm32l476xx.h"
