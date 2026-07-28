@@ -93,6 +93,8 @@ void Flash_Page_Program(uint32_t adr, const uint8_t *buf, uint16_t len) {
 	}
 	// Call SPI Interrupt driver function to send transmission
 	SPI_Interrupt_Send_Payload(transfer_arr, incoming_arr, user_def_transfer_len);
+
+	while (Get_Spi_State() != SPI_READY_STATE);
 }
 
 void Flash_Read_Data(uint32_t adr, uint8_t *buf, uint16_t len) {
@@ -175,6 +177,8 @@ void Flash_Erase_Sector(uint32_t adr) {
 	user_def_transfer_len = 4;
 
 	SPI_Interrupt_Send_Payload(transfer_arr, incoming_arr, user_def_transfer_len);
+
+	while (Get_Spi_State() != SPI_READY_STATE);
 }
 
 
