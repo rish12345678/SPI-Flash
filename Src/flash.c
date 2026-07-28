@@ -17,6 +17,9 @@ void Flash_Poll_Until_Ready(void) {
 		// Call SPI Interrupt driver function to send byte
 		SPI_Interrupt_Send_Payload(transfer_arr, incoming_arr, user_def_transfer_len);
 
+		// Wait for transmission to complete
+		while (Get_Spi_State() != SPI_READY_STATE);
+
 		// Check it's zero'th bit, a zero is not BUSY and a 1 is BUSY
 		// if read status register says its NOT BUSY -> return
 		if (!(incoming_arr[1] & FLASH_SR1_STATUS_MSK)) return;
@@ -35,6 +38,7 @@ void Flash_Set_Write_Enable(void) {
 	SPI_Interrupt_Send_Payload(transfer_arr, incoming_arr, user_def_transfer_len);
 
 	// Poll until SMTHG ----> Maybe come back here!!
+	while (Get_Spi_State() != SPI_READY_STATE);
 }
 
 void Flash_Page_Program(uint32_t adr, const uint8_t *buf, uint16_t len) {
@@ -65,7 +69,7 @@ void Flash_Page_Program(uint32_t adr, const uint8_t *buf, uint16_t len) {
 	if (adr < 0 || adr > 0x00FFFFFF) return;
 	// If pay-load larger than 256, too big for our transfer_arr
 	if (len > MAX_TRANSFER_LEN - 4) return;
-	if (buf == NULL) return;
+	if (buf == 0) return;
 
 	// Send WE cmnd to flip on WEL flag
 	Flash_Set_Write_Enable();
@@ -103,7 +107,7 @@ void Flash_Read_Data(uint32_t adr, uint8_t *buf, uint16_t len) {
 	if (adr < 0 || adr > 0x00FFFFFF) return;
 	// If read-load larger than 256, too big for our incoming_arr
 	if (len > MAX_TRANSFER_LEN - 4) return;
-	if (buff == NULL) return;
+	if (buf == 0) return;
 
 
 
