@@ -26,6 +26,8 @@
 #define FTL_URGENT_GC_NEEDED 14
 #define FTL_VITAL_GC_NEEDED 15
 
+#define FTL_UNMAPPED 0xFFFF
+
 // This is the state of each of the currently 16 PHYSICAL sectors in the currently used block
 typedef enum {
 	FREE_SECTOR = 0, // This sector is erased, all 0xFF
@@ -35,7 +37,7 @@ typedef enum {
 
 // Metadata struct for tracking physical sector states
 typedef struct {
-    uint16_t logical_sector_owner; // sector page number mapped here
+    uint16_t logical_sector_owner; // sector owner number mapped here
     SectorState_t state; // FREE, VALID, or DIRTY
 } PhysicalSectorMetadata_t;
 
