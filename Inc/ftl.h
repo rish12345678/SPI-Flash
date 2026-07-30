@@ -14,6 +14,7 @@
 #define FTL_PAGE_SIZE 256 // Bytes per page
 #define FTL_PAGES_PER_SECTOR 16 // 16 pages * 256 bytes = 4096 bytes per Sector
 #define FTL_SECTOR_SIZE 4096 // Size of one physical sector
+#define FTL_BLOCK_SIZE 65536
 
 // Break down of zone in Flash managed and used by the FTL
 #define FTL_RESERVED_PHYSICAL_SECTORS 32 // Physical Sectors 0 to 31 reserved for FTL -> 0-15 Block 1, 16-31 Block 2
@@ -25,6 +26,21 @@
 // Urgency of garbage collection need
 #define FTL_URGENT_GC_NEEDED 14
 #define FTL_VITAL_GC_NEEDED 15
+
+// Currently using block 0 as buffer 0, and block 1 as buffer 1, could change later, so defining here
+#define FTL_REGION_0 0
+#define FTL_REGION_1 1
+
+// Flash MetaData sizes
+#define FTL_Flash_Logical_Page_Meta 2 // two bytes
+#define FTL_Flash_GC_State_Meta 1 // one byte
+
+// GC State-Machine Representations
+#define GC_META_ERASED_BLOCK 0xFF
+#define GC_META_VALID_BLOCK 0xFC
+#define GC_META_TRANSFERING_OUT_BLOCK 0xFB
+#define GC_META_OBSOLETE_BLOCK 0xFA
+
 
 #define FTL_UNMAPPED 0xFFFF
 
