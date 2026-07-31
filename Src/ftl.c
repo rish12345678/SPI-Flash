@@ -340,7 +340,12 @@ bool FTL_Write_Sector(uint16_t logical_sector, const uint8_t *payload_buf, int p
 	int write_adr = block_sector_page_offset_to_adr(block_in_use, next_clean_sector_idx, 0, meta_skip);
 	Flash_Page_Program(write_adr, (uint8_t*)payload_buf, payload_len);
 
+	// Update first_free_page_table, we just wrote to page zero of next_clean_sector_idx, so
+	// the next clean page in that sector is incremented to 1.
+	first_free_page_table[next_clean_sector_idx] = 1;
 
+
+	// Do RAM data structure updates after confirmed Flash write
 	if (L2P[logical_sector] != FTL_UNMAPPED) {
 		// This logical sector is not unused, there was already a prev phys mapping to this
 		// Set the physMeta Table for this old sector as stale, keep logical owner the same for magic num, doesn't matter tho
@@ -361,9 +366,32 @@ bool FTL_Write_Sector(uint16_t logical_sector, const uint8_t *payload_buf, int p
 	}
 	return true;
 }
-bool FTL_Read_Sector(uint16_t logical_sector, uint8_t *incoming_payload_buff) {
+
+bool FTL_Append_Sector(uint16_t logical_sector, const uint8_t *payload_buf, int payload_len) {
+	/*
+	 * Do same initial check as FTL_Write_Sector
+	 *
+	 * Now, if L2P[logical_sector] is 0xFFFF, unmapped, then just call Write Sector
+	 *  - This handles accidental new / clean sector attempts to append, so this will take care of setting up the new sector and writing block and/or sector level metadata in RAM + Flash
+	 *  - Increment of the first_free_page[physSectorIDX] value, taken care of in called function
+	 *  - Leave the function immediately, the rest is only for mid sector, new page writes
+	 *
+	 *
+	 * Otherwise, L2P[logical_sector] = physSectorIDX
+	 *
+	 * look at first_free_page[physSectorIDX] = first_free_page
+	 *
+	 * if (first_free_page > 15) this whole sector is full of written pages, call write sector to get a new physical sector for this logical sector
+	 *
+	 * else ie. first_free_page <= 15 --> if starting with 0xFFFF write page meta(logical sector owner), followed by 254 bytes of payload and then first_free_page[physSectorIDX]++
+	 */
+}
+
+bool FTL_Read_Sector(uint16_t logical_sector, uint8_t *incoming_payload_buff, int payload_len) {
+
 	return true;
 }
+
 void FTL_GarbageCollect(void) {
 
 }
