@@ -61,6 +61,35 @@ static uint8_t identify_block_in_use(void) {
 
 }
 
+static void build_L2P_and_Phys_Meta(void) {
+	/*
+	 * Grab each sector's metadata in the correct block, and do the following:
+	 *
+	 * if that number is 0xFF, ignore it
+	 *
+	 * if it has a a number 0 - 8 for the logical sectors
+	 * then take [that number], so L2P[that number] = index of physical sector your on.
+	 *
+	 * Before you just throw the value in L2P, check if that L2P index has a value:
+	 *  - if the value is 0xFF, that means its clean, do this:
+	 *  		- for this exact index in physMeta table, set Logical Page # to 0xFF and state to CLEAN /ERASED
+	 *  		- dont touch L2P Table, isn't mapped yet
+	 * 	-if the [value] is a number 0 - 8 (only eight logical sectors):
+	 * 			- then check what the L2P[value] is:
+	 * 				- if L2P[value] = 0xFF, do L2P[value] = current idx in phys sector traversal | set PhysMeta[currIDX] = logpag# = currsectorMetaValue & page state = VALID
+	 * 				- if L2P[value] != 0xFF: // this logical sector already has a prev, now stale phys mapping that is no longer valid
+	 * 					- current L2P[value] is stale -> L2P[value] = stalePhysSector, go to PhysMeta[stalePhysSector] and set that state to STALE, logical page # doesn't matter anymore
+	 *
+	 * 	At the end of all of these checks, do the classic: L2P[that number] = index of physical sector your on.
+	 */
+
+	// for (uint16_t sec_metadata : In_use_block)
+	for (int i = 0; i < FTL_SECTORS_PER_BLOCK; i++) {
+		uint32_t adr =
+		uint16_t sector_metadata = Flash_Read_Data(adr, uint8_t *buf, uint16_t len)
+	}
+}
+
 
 
 void FTL_Init(void) {
@@ -87,7 +116,7 @@ void FTL_Init(void) {
 
 	// Mark all logical sectors as unmapped
 	for (int i = 0; i < FTL_LOGICAL_SECTORS; i++) {
-		L2P[i] = FTL_UNMAPPED;
+		L2P[i] = FTL_UNMAPPED; // Default in RAM mapping value, means not mapped to phys
 	}
 
 	// Initialize physical sector metadata
@@ -155,8 +184,8 @@ void FTL_Mount(void) {
 	block_in_use = identify_block_in_use();
 
 
-	// Build L2P
-
+	// Build L2P and FTL_Phys_Page_Meta_Arr
+	build_L2P_and_Phys_Meta();
 
 }
 bool FTL_Write_Sector(uint16_t logical_sector, const uint8_t *payload_buf);
