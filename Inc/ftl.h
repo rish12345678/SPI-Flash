@@ -27,6 +27,8 @@
 #define FTL_URGENT_GC_NEEDED 14
 #define FTL_VITAL_GC_NEEDED 15
 
+#define NUM_BLOCKS_PER_REGION 1
+
 // Currently using block 0 as buffer 0, and block 1 as buffer 1, could change later, so defining here
 #define FTL_REGION_0 0
 #define FTL_REGION_1 1
@@ -59,7 +61,7 @@ typedef struct {
 
 // FTL API Functions
 void FTL_Init(void);
-bool FTL_Write_Sector(uint16_t logical_sector, const uint8_t *payload_buf);
+bool FTL_Write_Sector(uint16_t logical_sector, const uint8_t *payload_buf, int payload_len);
 bool FTL_Read_Sector(uint16_t logical_sector, uint8_t *incoming_payload_buff);
 void FTL_GarbageCollect(void);
 

@@ -202,7 +202,7 @@ void FTL_Init(void) {
 	}
 
 	// Initialize physical sector metadata
-	for (int i = 0; i < FTL_RESERVED_PHYSICAL_SECTORS; i++) {
+	for (int i = 0; i < FTL_SECTORS_PER_BLOCK; i++) {
 		FTL_Phys_Page_Meta_Arr[i].logical_sector_owner = FTL_UNMAPPED;
 		FTL_Phys_Page_Meta_Arr[i].state = FREE_SECTOR;
 	}
@@ -279,6 +279,91 @@ void FTL_Mount(void) {
 	build_first_free_page_table();
 
 }
-bool FTL_Write_Sector(uint16_t logical_sector, const uint8_t *payload_buf);
-bool FTL_Read_Sector(uint16_t logical_sector, uint8_t *incoming_payload_buff);
-void FTL_GarbageCollect(void);
+/*
+ * TODO: PAYLOAD MAX: 253 bytes, Make it more bytes
+ */
+bool FTL_Write_Sector(uint16_t logical_sector, const uint8_t *payload_buf, int payload_len) {
+	// If L2P[logical_sector] != 0xFF, do the setting stale thing in physmeta for L2P[logical_sector] (the old value), (either way
+	// update L2P with new nextcleansectoridx, set PhysMeta[nextcleansectoridx] to Valid and logic sector = logical_sector, increment next_clean_sector_idx)
+	//
+
+	// Also, keep checking next_clean_sector_idx for FTL_URGENT_GC_NEEDED
+
+	// Always write to two bytes in to the start of a page of teh scetor, unless phsy sector
+	// 0 or 16, in those cases write three bytes in
+
+	// For now, only do 253 byte writes at a time, handle sector, then block size later
+
+	/*
+	 * ORDER:
+	 *
+	 * Check if we even can do the requested write, return if not
+	 *
+	 * Write to Flash Metadata, followed by Flash Payload
+	 *
+	 * Then write the RAM metadata
+	 *
+	 * This way RAM isn't an ill-reflection of Flash -> if power goes we set up RAM based on accurate Flash
+	 * And then also if power goes mid Flash payload write, Flash metadata tells us not to tamper
+	 */
+
+	// For now only take 253 bytes
+	if (payload_len > FTL_PAGE_SIZE - 3) return false;
+	if (logical_sector > FTL_LOGICAL_SECTORS - 1) return false;
+	if (payload_buf == 0) return false;
+
+
+
+	// First do the write
+
+	// If we are at first physical sector in our region, skip three bytes
+	uint8_t meta_skip = 0;
+
+	if (next_clean_sector_idx == 0) {
+		meta_skip = 3;
+		int write_adr = block_sector_page_offset_to_adr(block_in_use, next_clean_sector_idx, 0, 0);
+		uint8_t meta_payload_buff[meta_skip];
+
+		*(uint16_t*) meta_payload_buff = logical_sector;
+		*(meta_payload_buff + 2) = GC_META_VALID_BLOCK;
+
+		Flash_Page_Program(write_adr, (uint8_t*)meta_payload_buff, meta_skip);
+	} else {
+		meta_skip = 2;
+		int write_adr = block_sector_page_offset_to_adr(block_in_use, next_clean_sector_idx, 0, 0);
+		uint8_t meta_payload_buff[meta_skip];
+
+		*(uint16_t*) meta_payload_buff = logical_sector;
+		Flash_Page_Program(write_adr, (uint8_t*)meta_payload_buff, meta_skip);
+	}
+
+	int write_adr = block_sector_page_offset_to_adr(block_in_use, next_clean_sector_idx, 0, meta_skip);
+	Flash_Page_Program(write_adr, (uint8_t*)payload_buf, payload_len);
+
+
+	if (L2P[logical_sector] != FTL_UNMAPPED) {
+		// This logical sector is not unused, there was already a prev phys mapping to this
+		// Set the physMeta Table for this old sector as stale, keep logical owner the same for magic num, doesn't matter tho
+		FTL_Phys_Page_Meta_Arr[L2P[logical_sector]].state = DIRTY_SECTOR;
+	}
+	L2P[logical_sector] = next_clean_sector_idx;
+	FTL_Phys_Page_Meta_Arr[next_clean_sector_idx].logical_sector_owner = logical_sector;
+	FTL_Phys_Page_Meta_Arr[next_clean_sector_idx].state = VALID_SECTOR;
+
+
+
+
+	next_clean_sector_idx++;
+	// If our next clean sector is close to the end of physical sectors in one block, jump to
+	// the other
+	if (next_clean_sector_idx >= FTL_URGENT_GC_NEEDED) {
+		FTL_GarbageCollect(); // TODO: In the meantime save writes to RAM BUFFER
+	}
+	return true;
+}
+bool FTL_Read_Sector(uint16_t logical_sector, uint8_t *incoming_payload_buff) {
+	return true;
+}
+void FTL_GarbageCollect(void) {
+
+}
