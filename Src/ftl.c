@@ -1,3 +1,4 @@
+#include "flash.h"
 #include "ftl.h"
 
 #include <string.h>
@@ -6,18 +7,20 @@
 // Holds 0 or 1 based on which block is currently holding the data, use this to see which parts of array to look at 0-15 or 16-31 idxs
 static int block_in_use = 0;
 // Hold 32 physical sectors at one time TOTAL, even though 16 are not in use at all at a time
-static PhysicalSectorMetadata_t FTL_Phys_Page_Meta_Arr[FTL_RESERVED_PHYSICAL_SECTORS]; // 32
+static PhysicalSectorMetadata_t FTL_Phys_Page_Meta_Arr[FTL_SECTORS_PER_BLOCK]; // 16 physical sectors at once
 // Allow use access to 8 logical sectors at one time (over provisioning)
 // Each index is each of the eight logical sectors, and the corresponding value is the physical sector
 static uint16_t L2P[FTL_LOGICAL_SECTORS]; // 8
 
 
 static uint16_t next_clean_sector_idx = 0;
-// Hold the next of the 16 pages in a sector in the corresponding sector you that is not yet fully filled
-// Lets say we have written up to half of page five in sector two; append_page_idx_arr[2] = 5;
-// Scan through page five of sector two and whichever byte was the last none 0xFFFF, can write after that.
-// This is used for appends to a sector only, not for overwrites or clean new writes
-static uint8_t append_page_idx_arr[FTL_RESERVED_PHYSICAL_SECTORS]; // 32
+
+
+// Holds the next fully blank page per sector.  If we have written up to half of
+// page four in physical sector eight, then first_free_page_table[8] = 5
+static uint16_t first_free_page_table[FTL_SECTORS_PER_BLOCK]; // 16 physical sector, each has a page
+
+
 
 // Helper Functions
 static int block_sector_page_offset_to_adr(int block, int sector, int page, int offset) {
@@ -26,10 +29,11 @@ static int block_sector_page_offset_to_adr(int block, int sector, int page, int 
 
 static uint8_t identify_block_in_use(void) {
 	// Read in GC State Machine byte for both starting sectors of each section(currently in use and not)
-	int region_0_gc_state_machine_adr = block_sector_page_offset_to_adr(FTL_REGION_0, 0, 0, FTL_Flash_Logical_Page_Meta);
-	int region_1_gc_state_machine_adr = block_sector_page_offset_to_adr(FTL_REGION_1, 0, 0, FTL_Flash_Logical_Page_Meta);
+	uint32_t region_0_gc_state_machine_adr = block_sector_page_offset_to_adr(FTL_REGION_0, 0, 0, FTL_Flash_Logical_Page_Meta);
+	uint32_t region_1_gc_state_machine_adr = block_sector_page_offset_to_adr(FTL_REGION_1, 0, 0, FTL_Flash_Logical_Page_Meta);
 	uint8_t region_0_gc_meta_buffer;
 	uint8_t region_1_gc_meta_buffer;
+
 	Flash_Read_Data(region_0_gc_state_machine_adr, &region_0_gc_meta_buffer, FTL_Flash_GC_State_Meta);
 	Flash_Read_Data(region_1_gc_state_machine_adr, &region_1_gc_meta_buffer, FTL_Flash_GC_State_Meta);
 
@@ -67,12 +71,9 @@ static void build_L2P_and_Phys_Meta(void) {
 	 *
 	 * if that number is 0xFF, ignore it
 	 *
-	 * if it has a a number 0 - 8 for the logical sectors
-	 * then take [that number], so L2P[that number] = index of physical sector your on.
-	 *
 	 * Before you just throw the value in L2P, check if that L2P index has a value:
 	 *  - if the value is 0xFF, that means its clean, do this:
-	 *  		- for this exact index in physMeta table, set Logical Page # to 0xFF and state to CLEAN /ERASED
+	 *  		- for this exact index in physMeta table, set Logical Sector # to 0xFF and state to CLEAN /ERASED
 	 *  		- dont touch L2P Table, isn't mapped yet
 	 * 	-if the [value] is a number 0 - 8 (only eight logical sectors):
 	 * 			- then check what the L2P[value] is:
@@ -80,14 +81,60 @@ static void build_L2P_and_Phys_Meta(void) {
 	 * 				- if L2P[value] != 0xFF: // this logical sector already has a prev, now stale phys mapping that is no longer valid
 	 * 					- current L2P[value] is stale -> L2P[value] = stalePhysSector, go to PhysMeta[stalePhysSector] and set that state to STALE, logical page # doesn't matter anymore
 	 *
-	 * 	At the end of all of these checks, do the classic: L2P[that number] = index of physical sector your on.
+	 * 	At the end of all of these checks, do THE CLASSIC ONLY IF the sector metadata value is in the range of logical sectors(0 - 8).
+	 * 	Obviously, you can't do L2P[1000], when L2P has eight elements.
+	 * 	THE CLASSIC -> L2P[that number] = index of physical sector your on.
 	 */
 
+	// TODO: Where do we assign FLASH metadata at setup?
+	// TODO: How do we ensure that we loop through the correct block
+
+
+	bool nxt_cln_sector_set = false;
 	// for (uint16_t sec_metadata : In_use_block)
-	for (int i = 0; i < FTL_SECTORS_PER_BLOCK; i++) {
-		uint32_t adr =
-		uint16_t sector_metadata = Flash_Read_Data(adr, uint8_t *buf, uint16_t len)
+	for (int curr_Flash_Sector = 0; curr_Flash_Sector < FTL_SECTORS_PER_BLOCK; curr_Flash_Sector++) {
+		uint32_t adr = block_sector_page_offset_to_adr(block_in_use, curr_Flash_Sector, 0, 0);
+
+		uint16_t sector_metadata = 0xFFFF;
+		Flash_Read_Data(adr, (uint8_t*)&sector_metadata, sizeof(uint16_t));
+
+		// sector_metadata now holds the sector metadata
+
+
+		// This means that this sector isn't even getting its metadata tracked
+		// This just means the metadata is in an ERASED part of memory, haven't gotten there yet.
+		if (sector_metadata == FTL_UNMAPPED) {
+			// This sector is completely clean / erased, there is no L2P mapping to this
+			FTL_Phys_Page_Meta_Arr[curr_Flash_Sector].logical_sector_owner = 0xFF; // Default: No L2P mapping
+			FTL_Phys_Page_Meta_Arr[curr_Flash_Sector].state = FREE_SECTOR; // Default: This is all clean
+			if (!nxt_cln_sector_set) {
+				next_clean_sector_idx = curr_Flash_Sector;
+				nxt_cln_sector_set = true;
+			}
+			continue; // don't even try to index 0xFF in L2P, max is idx = 7
+		}
+
+		// Do the checks before throwing into L2P
+		uint16_t L2P_Val = L2P[sector_metadata];
+		if (L2P_Val == FTL_UNMAPPED) {
+			// This means this is the first L2P is seeing of this physical sector
+			// This is a valid mapping, just throw it in there
+			FTL_Phys_Page_Meta_Arr[curr_Flash_Sector].state = VALID_SECTOR;
+			FTL_Phys_Page_Meta_Arr[curr_Flash_Sector].logical_sector_owner = sector_metadata;
+		} else {
+			FTL_Phys_Page_Meta_Arr[L2P_Val].state = DIRTY_SECTOR;
+			// Logical owner doesn't matter now, its dirty
+
+
+			FTL_Phys_Page_Meta_Arr[curr_Flash_Sector].state = VALID_SECTOR;
+			FTL_Phys_Page_Meta_Arr[curr_Flash_Sector].logical_sector_owner = sector_metadata;
+			// Logical owner doesn't matter anymore
+		}
+		// Both if and else should execute this after updating data structures
+		L2P[sector_metadata] = curr_Flash_Sector;
 	}
+
+	if (!nxt_cln_sector_set) next_clean_sector_idx = FTL_SECTORS_PER_BLOCK;
 }
 
 
@@ -116,6 +163,7 @@ void FTL_Init(void) {
 
 	// Mark all logical sectors as unmapped
 	for (int i = 0; i < FTL_LOGICAL_SECTORS; i++) {
+		// Set default 0xFFFF
 		L2P[i] = FTL_UNMAPPED; // Default in RAM mapping value, means not mapped to phys
 	}
 
@@ -125,8 +173,8 @@ void FTL_Init(void) {
 		FTL_Phys_Page_Meta_Arr[i].state = FREE_SECTOR;
 	}
 
-	for (int i = 0; i < FTL_RESERVED_PHYSICAL_SECTORS; i++) {
-		append_page_idx_arr[i] = 0;
+	for (int i = 0; i < FTL_SECTORS_PER_BLOCK; i++) {
+		first_free_page_table[i] = 0xFFFF;
 	}
 
 	block_in_use = 0;
@@ -186,6 +234,15 @@ void FTL_Mount(void) {
 
 	// Build L2P and FTL_Phys_Page_Meta_Arr
 	build_L2P_and_Phys_Meta();
+
+	/*
+	 * TODO:
+	 * By this point at least make sure block 0 / 1, sector 0, page 0, offset zero in
+	 * Flash meta data is written otherwise it will mess up the following function
+	 */
+
+	// Build first_free_page_table
+	build_first_free_page_table();
 
 }
 bool FTL_Write_Sector(uint16_t logical_sector, const uint8_t *payload_buf);
