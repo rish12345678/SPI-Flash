@@ -137,6 +137,40 @@ static void build_L2P_and_Phys_Meta(void) {
 	if (!nxt_cln_sector_set) next_clean_sector_idx = FTL_SECTORS_PER_BLOCK;
 }
 
+void build_first_free_page_table(void) {
+	// TODO: Look into using a magic number
+	/*
+	 * Scan through the sectors of current in use block - i
+	 *
+	 * For each sector, scan through every page, and read the first two bytes only - j
+	 *
+	 * if the two bytes we get are 0xFFFF, then that means this is a clean page
+	 *  - Set arr[i] = j and bounce out of the inner loop
+	 */
+
+	for (int sector = 0; sector < FTL_SECTORS_PER_BLOCK; sector++) {
+		for (int page = 0; page < FTL_PAGES_PER_SECTOR; page++) {
+			uint32_t adr = block_sector_page_offset_to_adr(block_in_use, sector, page, 0);
+			uint16_t sector_metadata = 0xFFFF;
+			// grab two bytes
+			Flash_Read_Data(adr, (uint8_t*)&sector_metadata, sizeof(uint16_t));
+
+			if (sector_metadata == 0xFFFF) {
+				// This is the first clean page, set this value
+				first_free_page_table[sector] = page;
+				break;
+			}
+
+		}
+		// Essentially if using one block per region, is it
+		if (first_free_page_table[sector] == 0xFFFF) {
+			// This sector never found a clean page, set to 16, indicating we went passed page
+			// limit and never found a clean page, this sector is completely used up
+			first_free_page_table[sector] = FTL_PAGES_PER_SECTOR;
+		} // ELSE: We found a free page in this sector, we are good to go, we hit prev break
+	}
+}
+
 
 
 void FTL_Init(void) {
