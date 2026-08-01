@@ -405,14 +405,15 @@ bool FTL_Append_Sector(uint16_t logical_sector, const uint8_t *payload_buf, int 
 	}
 	// else
 	uint32_t write_adr = block_sector_page_offset_to_adr(block_in_use, physSectorIDX, first_free_page, 0);
-	uint8_t page_payload[payload_len + FTL_Flash_Logical_Page_Meta];
+	uint8_t page_payload[FTL_PAGE_SIZE];
 	*(uint16_t*) page_payload = logical_sector;
 	for (int i = 0; i < payload_len; i++) {
 		*(page_payload + 2 + i) = *(payload_buf + i);
 	}
-	int total_write_len = 2 + FTL_Flash_Logical_Page_Meta;
-	Flash_Page_Program(write_adr, (uint8_t*)page_payload, payload_len + total_write_len);
+	int total_write_len = payload_len + FTL_Flash_Logical_Page_Meta; // payload + two bytes for the page metadata
+	Flash_Page_Program(write_adr, (uint8_t*)page_payload, total_write_len);
 
+	// Increment next free page in this sector and then return
 	first_free_page_table[physSectorIDX]++;
 	return true;
 }
