@@ -367,13 +367,15 @@ bool FTL_Write_Sector(uint16_t logical_sector, const uint8_t *payload_buf, int p
 	return true;
 }
 
+
+// Writes a new page if possible
 bool FTL_Append_Sector(uint16_t logical_sector, const uint8_t *payload_buf, int payload_len) {
 	/*
 	 * Do same initial check as FTL_Write_Sector
 	 *
 	 * Now, if L2P[logical_sector] is 0xFFFF, unmapped, then just call Write Sector
 	 *  - This handles accidental new / clean sector attempts to append, so this will take care of setting up the new sector and writing block and/or sector level metadata in RAM + Flash
-	 *  - Increment of the first_free_page[physSectorIDX] value, taken care of in called function
+	 *  - Increment of the first_free_page[physSectorIDX] value, taken care of in called function, DON'T DO HERE!
 	 *  - Leave the function immediately, the rest is only for mid sector, new page writes
 	 *
 	 *
@@ -381,10 +383,38 @@ bool FTL_Append_Sector(uint16_t logical_sector, const uint8_t *payload_buf, int 
 	 *
 	 * look at first_free_page[physSectorIDX] = first_free_page
 	 *
-	 * if (first_free_page > 15) this whole sector is full of written pages, call write sector to get a new physical sector for this logical sector
+	 * if (first_free_page > 15) this whole sector is full of written pages, call write sector to get a new physical sector for this logical sector, that will mark this sector stale, and all other bookkeeping automatically
 	 *
 	 * else ie. first_free_page <= 15 --> if starting with 0xFFFF write page meta(logical sector owner), followed by 254 bytes of payload and then first_free_page[physSectorIDX]++
 	 */
+	if (payload_len > FTL_PAGE_SIZE - 2) return false;
+	if (logical_sector > FTL_LOGICAL_SECTORS - 1) return false;
+	if (payload_buf == 0) return false;
+
+	if (L2P[logical_sector] == FTL_UNMAPPED) {
+		// Returns the same bool as Write_Sector(ie, if that returns a fail, so does this, vice versa)
+		// At the same time bounces out of function, not-executing the rest of this for mid-sector writes
+		return FTL_Write_Sector(logical_sector, payload_buf, payload_len);
+	}
+
+	uint16_t physSectorIDX = L2P[logical_sector];
+	uint16_t first_free_page = first_free_page_table[physSectorIDX];
+	if (first_free_page > 15) {
+		// That means this whole physical sector we want to append to is full, just write their payload in a new physical sector, but passing in this logical one
+		return FTL_Write_Sector(logical_sector, payload_buf, payload_len);
+	}
+	// else
+	uint32_t write_adr = block_sector_page_offset_to_adr(block_in_use, physSectorIDX, first_free_page, 0);
+	uint8_t page_payload[payload_len + FTL_Flash_Logical_Page_Meta];
+	*(uint16_t*) page_payload = logical_sector;
+	for (int i = 0; i < payload_len; i++) {
+		*(page_payload + 2 + i) = *(payload_buf + i);
+	}
+	int total_write_len = 2 + FTL_Flash_Logical_Page_Meta;
+	Flash_Page_Program(write_adr, (uint8_t*)page_payload, payload_len + total_write_len);
+
+	first_free_page_table[physSectorIDX]++;
+	return true;
 }
 
 bool FTL_Read_Sector(uint16_t logical_sector, uint8_t *incoming_payload_buff, int payload_len) {
