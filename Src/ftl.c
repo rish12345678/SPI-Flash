@@ -21,6 +21,10 @@ static uint16_t next_clean_sector_idx = 0;
 static uint16_t first_free_page_table[FTL_SECTORS_PER_BLOCK]; // 16 physical sector, each has a page
 
 
+// Row is sector num, column is page num, each index pair holds value of number of bytes written in that page
+static uint8_t page_payload_len_table[FTL_SECTORS_PER_BLOCK * NUM_BLOCKS_PER_REGION][FTL_PAGES_PER_SECTOR];
+
+
 
 // Helper Functions
 static int block_sector_page_offset_to_adr(int block, int sector, int page, int offset) {
@@ -137,7 +141,7 @@ static void build_L2P_and_Phys_Meta(void) {
 	if (!nxt_cln_sector_set) next_clean_sector_idx = FTL_SECTORS_PER_BLOCK;
 }
 
-void build_first_free_page_table(void) {
+void build_first_free_page_table_and_page_payload_len_table(void) {
 	// TODO: Look into using a magic number
 	/*
 	 * Scan through the sectors of current in use block - i
@@ -275,12 +279,12 @@ void FTL_Mount(void) {
 	 * Flash meta data is written otherwise it will mess up the following function
 	 */
 
-	// Build first_free_page_table
-	build_first_free_page_table();
+	// Build first_free_page_table and page_payload_len_table
+	build_first_free_page_table_and_page_payload_len_table();
 
 }
 /*
- * TODO: PAYLOAD MAX: 253 bytes, Make it more bytes
+ * TODO: PAYLOAD MAX: 252 bytes, Make it more bytes
  */
 bool FTL_Write_Sector(uint16_t logical_sector, const uint8_t *payload_buf, int payload_len) {
 	// If L2P[logical_sector] != 0xFF, do the setting stale thing in physmeta for L2P[logical_sector] (the old value), (either way
@@ -307,8 +311,8 @@ bool FTL_Write_Sector(uint16_t logical_sector, const uint8_t *payload_buf, int p
 	 * And then also if power goes mid Flash payload write, Flash metadata tells us not to tamper
 	 */
 
-	// For now only take 253 bytes
-	if (payload_len > FTL_PAGE_SIZE - 3) return false;
+	// For now only take 252 bytes
+	if (payload_len > FTL_USABLE_BYTES_PER_PAGE) return false;
 	if (logical_sector > FTL_LOGICAL_SECTORS - 1) return false;
 	if (payload_buf == 0) return false;
 
@@ -317,28 +321,23 @@ bool FTL_Write_Sector(uint16_t logical_sector, const uint8_t *payload_buf, int p
 	// First do the write
 
 	// If we are at first physical sector in our region, skip three bytes
-	uint8_t meta_skip = 0;
 
-	if (next_clean_sector_idx == 0) {
-		meta_skip = 3;
-		int write_adr = block_sector_page_offset_to_adr(block_in_use, next_clean_sector_idx, 0, 0);
-		uint8_t meta_payload_buff[meta_skip];
 
-		*(uint16_t*) meta_payload_buff = logical_sector;
-		*(meta_payload_buff + 2) = GC_META_VALID_BLOCK;
+	int write_adr = block_sector_page_offset_to_adr(block_in_use, next_clean_sector_idx, 0, 0);
+	uint8_t meta_payload_buff[FTL_METADATA_PER_PAGE] = CLEAN_META;
+	// Every start of sector write gets logical sector metadata
+	*(uint16_t*) meta_payload_buff = logical_sector;
+	// Only start of region / in this case block gets GC STATE as well
+	if (next_clean_sector_idx == 0) *(meta_payload_buff + 2) = GC_META_VALID_BLOCK;
+	// Lastly, since we are writing to the start of a page always, throw in the page metadata; the const payload length
+	*(meta_payload_buff + 3) = payload_len;
+	Flash_Page_Program(write_adr, (uint8_t*)meta_payload_buff, FTL_METADATA_PER_PAGE);
 
-		Flash_Page_Program(write_adr, (uint8_t*)meta_payload_buff, meta_skip);
-	} else {
-		meta_skip = 2;
-		int write_adr = block_sector_page_offset_to_adr(block_in_use, next_clean_sector_idx, 0, 0);
-		uint8_t meta_payload_buff[meta_skip];
+	int write_adr2 = block_sector_page_offset_to_adr(block_in_use, next_clean_sector_idx, 0, FTL_METADATA_PER_PAGE);
+	Flash_Page_Program(write_adr2, (uint8_t*)payload_buf, payload_len);
 
-		*(uint16_t*) meta_payload_buff = logical_sector;
-		Flash_Page_Program(write_adr, (uint8_t*)meta_payload_buff, meta_skip);
-	}
 
-	int write_adr = block_sector_page_offset_to_adr(block_in_use, next_clean_sector_idx, 0, meta_skip);
-	Flash_Page_Program(write_adr, (uint8_t*)payload_buf, payload_len);
+
 
 	// Update first_free_page_table, we just wrote to page zero of next_clean_sector_idx, so
 	// the next clean page in that sector is incremented to 1.
@@ -354,6 +353,9 @@ bool FTL_Write_Sector(uint16_t logical_sector, const uint8_t *payload_buf, int p
 	L2P[logical_sector] = next_clean_sector_idx;
 	FTL_Phys_Page_Meta_Arr[next_clean_sector_idx].logical_sector_owner = logical_sector;
 	FTL_Phys_Page_Meta_Arr[next_clean_sector_idx].state = VALID_SECTOR;
+
+	// Update page_payload_len_table in RAM
+	page_payload_len_table[next_clean_sector_idx][0] = payload_len;
 
 
 
@@ -405,7 +407,7 @@ bool FTL_Append_Sector(uint16_t logical_sector, const uint8_t *payload_buf, int 
 	}
 	// else
 	uint32_t write_adr = block_sector_page_offset_to_adr(block_in_use, physSectorIDX, first_free_page, 0);
-	uint8_t page_payload[FTL_PAGE_SIZE];
+	uint8_t page_payload[FTL_PAGE_SIZE]; // Fixed size array to populate one page
 	*(uint16_t*) page_payload = logical_sector;
 	for (int i = 0; i < payload_len; i++) {
 		*(page_payload + 2 + i) = *(payload_buf + i);
@@ -418,8 +420,20 @@ bool FTL_Append_Sector(uint16_t logical_sector, const uint8_t *payload_buf, int 
 	return true;
 }
 
-bool FTL_Read_Sector(uint16_t logical_sector, uint8_t *incoming_payload_buff, int payload_len) {
-
+bool FTL_Read_Sector(uint16_t logical_sector, uint8_t *incoming_payload_buff, int sector_offset, int payload_len) {
+	/*
+	 * HIGH LEVEL:
+	 * Read the rest of this page, if at page offset
+	 * Then read each sequential page in chunks, skipping metadata
+	 *
+	 * DETAILS:
+	 * Do parameters check rq
+	 *
+	 * Indentify the physical sector to read from, and gets sector# + offset in bytes
+	 * Do some more checks here, (offset + payload_len) - expected meta < 4096, don't leave sector
+	 *
+	 * Read rest of this page into i_p_b, and then loop the rest of the pages
+	 */
 	return true;
 }
 
