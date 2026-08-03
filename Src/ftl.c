@@ -430,7 +430,34 @@ bool FTL_Append_Sector(uint16_t logical_sector, const uint8_t *payload_buf, int 
 	return true;
 }
 
-bool FTL_Read_Sector(uint16_t logical_sector, uint8_t *incoming_payload_buff, int sector_offset, int payload_len) {
+int read_page(uint8_t physical_sector, uint8_t *buf, uint8_t curr_page, uint16_t bytes_left_to_read) {
+	// If read a partial page, return false, else true
+
+	/*
+	 * if num bytes in this page < bytes_left
+	 *  -> do a page read start at start of mem, len is page_bytes, ret page_bytes
+	 * else
+	 *  -> even is = do the read start at start of mem to bytes_left, ret bytes_left
+	 */
+
+	if (curr_page > FTL_PAGES_PER_SECTOR - 1) return 0;
+	if (bytes_left_to_read == 0) return 0;
+
+	uint8_t bytes_in_curr_page = page_payload_len_table[physical_sector][curr_page];
+	uint32_t adr = block_sector_page_offset_to_adr(block_in_use, physical_sector, curr_page, FTL_METADATA_PER_PAGE);
+	if (bytes_in_curr_page < bytes_left_to_read) {
+		Flash_Read_Data(adr, buf, bytes_in_curr_page);
+		return bytes_in_curr_page;
+	}
+	Flash_Read_Data(adr, buf, bytes_left_to_read);
+	return bytes_left_to_read;
+
+}
+
+
+// A return of zero means there was a critical failure
+// No bytes were explicitly placed in incoming_payload_buff
+uint16_t FTL_Read_Sector(uint16_t logical_sector, uint8_t *incoming_payload_buff, int sector_offset, int payload_len) {
 	/*
 	 * HIGH LEVEL:
 	 * User wants to read from some sector, and they want x bytes at a y offset of bytes
@@ -457,7 +484,72 @@ bool FTL_Read_Sector(uint16_t logical_sector, uint8_t *incoming_payload_buff, in
 	 * page payload_len_meta > sum) next page and read, until end, then do
 	 * the section of page read again as much as needed.
 	 */
-	return true;
+
+	// Basic checks
+	if (payload_len > FTL_SECTOR_SIZE - (FTL_METADATA_PER_PAGE * FTL_PAGES_PER_SECTOR)) return 0;
+	if (logical_sector > FTL_LOGICAL_SECTORS - 1) return 0;
+	if (L2P[logical_sector] == FTL_UNMAPPED) return 0;
+	if (incoming_payload_buff == 0) return 0;
+
+	uint8_t physical_sector = L2P[logical_sector];
+
+	uint8_t curr_page = 0;
+	uint16_t iter_bytes_sum = page_payload_len_table[physical_sector][curr_page];
+	uint16_t bytes_left_to_read = payload_len;
+	bool reading = false;
+
+	while (iter_bytes_sum <= sector_offset) {
+		// curr_page about to overflow, offset is to large for bytes in sector
+		if (curr_page >= FTL_PAGES_PER_SECTOR - 1) return 0;
+		// Iterating while we haven't landed on readable page
+		curr_page++;
+		iter_bytes_sum += page_payload_len_table[physical_sector][curr_page];
+	}
+	// At this point we have reaches a page that exceeds the offset
+	// To see where in this page to start reading from:
+
+
+	reading = true;
+
+	// For first page read
+
+	uint8_t back = iter_bytes_sum - sector_offset;
+	uint8_t page_offset = page_payload_len_table[physical_sector][curr_page] - back;
+	if (back >= bytes_left_to_read) {
+		// if we don't even read until the end of this page, read bytes and ret
+		uint32_t adr = block_sector_page_offset_to_adr(block_in_use, physical_sector, curr_page, FTL_METADATA_PER_PAGE + page_offset);
+		uint8_t buf[back];
+		Flash_Read_Data(adr, buf, back);
+		//copy over this bytes read from this page to main return array
+		memcpy(incoming_payload_buff, buf, back);
+		// Return number of bytes read from first page.
+		reading = false;
+		return back;
+	} else {
+		uint32_t adr = block_sector_page_offset_to_adr(block_in_use, physical_sector, curr_page, FTL_METADATA_PER_PAGE + page_offset);
+		uint8_t buf[page_payload_len_table[physical_sector][curr_page] - page_offset];
+		Flash_Read_Data(adr, buf, back);
+		//copy over this bytes read from this page to main return array
+		memcpy(incoming_payload_buff, buf, back);
+		// Decrement bytes_left_to_read to keep track of progress
+		bytes_left_to_read -= back;
+		curr_page++;
+		iter_bytes_sum += page_payload_len_table[physical_sector][curr_page];
+	}
+
+	// For reading all other pages
+	while (reading) {
+		uint8_t transition_buf[FTL_PAGE_SIZE];
+		int bytes_read = read_page(physical_sector, transition_buf, curr_page, bytes_left_to_read);
+		memcpy(incoming_payload_buff + (payload_len - bytes_read), &transition_buf, bytes_read);
+		bytes_left_to_read -= bytes_read;
+		if (!bytes_read) reading = false;
+		curr_page++;
+	}
+
+
+
+	return payload_len - bytes_left_to_read;
 }
 
 void FTL_GarbageCollect(void) {
