@@ -390,9 +390,9 @@ bool FTL_Append_Sector(uint16_t logical_sector, const uint8_t *payload_buf, int 
 	 *
 	 * if (first_free_page > 15) this whole sector is full of written pages, call write sector to get a new physical sector for this logical sector, that will mark this sector stale, and all other bookkeeping automatically
 	 *
-	 * else ie. first_free_page <= 15 --> if starting with 0xFFFF write page meta(logical sector owner), followed by 254 bytes of payload and then first_free_page[physSectorIDX]++
+	 * else ie. first_free_page <= 15 --> if starting with 0xFFFF write page meta(logical sector owner), followed by 252 bytes of payload and then first_free_page[physSectorIDX]++
 	 */
-	if (payload_len > FTL_PAGE_SIZE - 2) return false;
+	if (payload_len > FTL_USABLE_BYTES_PER_PAGE) return false;
 	if (logical_sector > FTL_LOGICAL_SECTORS - 1) return false;
 	if (payload_buf == 0) return false;
 
@@ -411,31 +411,51 @@ bool FTL_Append_Sector(uint16_t logical_sector, const uint8_t *payload_buf, int 
 	// else
 	uint32_t write_adr = block_sector_page_offset_to_adr(block_in_use, physSectorIDX, first_free_page, 0);
 	uint8_t page_payload[FTL_PAGE_SIZE]; // Fixed size array to populate one page
-	*(uint16_t*) page_payload = logical_sector;
+	//*(uint16_t*) page_payload = logical_sector; // DO NOT WRITE LOGICAL SECTOR # AT START OF EVERY PAGE, UNNECESSARY FOR IDENTIFYING CLEAN PAGES
+
+	// Three bytes of padding metadata, followed by metadata for page pyld len
+	*(uint16_t*)page_payload = 0xFFFF;
+	*(page_payload + 2) = 0xFF;
+	*(page_payload + 3) = payload_len;
+
 	for (int i = 0; i < payload_len; i++) {
-		*(page_payload + 2 + i) = *(payload_buf + i);
+		*(page_payload + FTL_METADATA_PER_PAGE + i) = *(payload_buf + i);
 	}
-	int total_write_len = payload_len + FTL_Flash_Logical_Page_Meta; // payload + two bytes for the page metadata
+	int total_write_len = payload_len + FTL_METADATA_PER_PAGE; // payload + four bytes for the page metadata
 	Flash_Page_Program(write_adr, (uint8_t*)page_payload, total_write_len);
 
 	// Increment next free page in this sector and then return
 	first_free_page_table[physSectorIDX]++;
+	page_payload_len_table[physSectorIDX][first_free_page] = payload_len;
 	return true;
 }
 
 bool FTL_Read_Sector(uint16_t logical_sector, uint8_t *incoming_payload_buff, int sector_offset, int payload_len) {
 	/*
 	 * HIGH LEVEL:
-	 * Read the rest of this page, if at page offset
-	 * Then read each sequential page in chunks, skipping metadata
+	 * User wants to read from some sector, and they want x bytes at a y offset of bytes
 	 *
-	 * DETAILS:
-	 * Do parameters check rq
+	 * Do basic checks first
 	 *
-	 * Indentify the physical sector to read from, and gets sector# + offset in bytes
-	 * Do some more checks here, (offset + payload_len) - expected meta < 4096, don't leave sector
+	 * Go through page_payload_len_table working through the correct phys
+	 * sector and sum up the values until sum > offset
 	 *
-	 * Read rest of this page into i_p_b, and then loop the rest of the pages
+	 * That means at that page, got to the page that has the y'th byte
+	 *
+	 * We also know how many bytes in we need to go to get to that y'th byte
+	 *
+	 * Then continue the summing up with previous sum and see when we get to
+	 * x + y.  If we get to the last col and never get the sum = x + y, that
+	 * means there weren't enough bytes in that sector.  TODO: Return int
+	 * num_bytes_read, so the user knows and can just do a quick if returned
+	 * value == payload_len -> read successful, and then we can return
+	 * whatever sum - y is if we fall short, and then we can just return 0 for
+	 * the false returns at the start for faulty parameters.
+	 *
+	 * Essentially once we get to the offset value we now start reads from that
+	 * page and offset within the page, and then while !(end of sector or next
+	 * page payload_len_meta > sum) next page and read, until end, then do
+	 * the section of page read again as much as needed.
 	 */
 	return true;
 }
