@@ -155,19 +155,22 @@ void build_first_free_page_table_and_page_payload_len_table(void) {
 	for (int sector = 0; sector < FTL_SECTORS_PER_BLOCK; sector++) {
 		for (int page = 0; page < FTL_PAGES_PER_SECTOR; page++) {
 			uint32_t adr = block_sector_page_offset_to_adr(block_in_use, sector, page, 0);
-			uint16_t sector_metadata = 0xFFFF;
+			uint32_t sector_metadata = 0xFFFFFFFF;
 			// grab two bytes
-			Flash_Read_Data(adr, (uint8_t*)&sector_metadata, sizeof(uint16_t));
+			Flash_Read_Data(adr, (uint8_t*)&sector_metadata, sizeof(sector_metadata));
 
-			if (sector_metadata == 0xFFFF) {
+			if (sector_metadata == 0xFFFFFFFF) {
 				// This is the first clean page, set this value
 				first_free_page_table[sector] = page;
 				break;
+			} else {
+				// in this page per sector loop, if meta not empty, page has been written to, read num bytes in page and set in page_payload_len_table
+				page_payload_len_table[sector][page] = (uint8_t) sector_metadata;
 			}
 
 		}
 		// Essentially if using one block per region, is it
-		if (first_free_page_table[sector] == 0xFFFF) {
+		if (first_free_page_table[sector] == FTL_UNMAPPED) {
 			// This sector never found a clean page, set to 16, indicating we went passed page
 			// limit and never found a clean page, this sector is completely used up
 			first_free_page_table[sector] = FTL_PAGES_PER_SECTOR;
