@@ -5,7 +5,7 @@
 #include <stdbool.h>
 #include "stm32l476xx.h"
 
-#define MAX_TRANSFER_LEN 260 // How many bytes we are sending
+#define MAX_TRANSFER_LEN 270 // How many bytes we are sending
 
 // Array to hold outgoing bytes
 extern volatile uint8_t transfer_arr[MAX_TRANSFER_LEN];
