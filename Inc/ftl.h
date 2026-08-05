@@ -67,6 +67,7 @@ typedef struct {
 
 // FTL API Functions
 void FTL_Init(void);
+void FTL_Mount(void);
 bool FTL_Write_Sector(uint16_t logical_sector, const uint8_t *payload_buf, int payload_len);
 bool FTL_Append_Sector(uint16_t logical_sector, const uint8_t *payload_buf, int payload_len);
 uint16_t FTL_Read_Sector(uint16_t logical_sector, uint8_t *incoming_payload_buff, int sector_offset, int payload_len);
