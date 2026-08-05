@@ -30,13 +30,16 @@
 #define FLASH_SECTOR_SIZE 4096
 #define FLASH_BLOCK_SIZE 65536
 
+// Simulate two block for now - FOR TESTING
+#define MOCK_FLASH_SIZE (256 * 16 * 16 * 2)
+
 
 // API
 void Flash_Poll_Until_Ready(void);
 void Flash_Set_Write_Enable(void);
 void Flash_Erase_Sector(uint32_t adr);
+// TODO: Add Flash_Erase_Block
 void Flash_Page_Program(uint32_t adr, const uint8_t *buf, uint16_t len);
 void Flash_Read_Data(uint32_t adr, uint8_t *buf, uint16_t len);
 
 #endif
-ftl;
