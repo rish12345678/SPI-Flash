@@ -181,4 +181,3 @@ void Flash_Erase_Sector(uint32_t adr) {
 	while (Get_Spi_State() != SPI_READY_STATE);
 }
 
-

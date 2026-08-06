@@ -86,6 +86,16 @@ static uint8_t identify_block_in_use(void)
     }
 }
 
+static void Set_GC_State_Machine(int region, uint8_t state) {
+	int write_GC_adr = block_sector_page_offset_to_adr(region, 0, 0, 2);
+	// Currently at 0xFC or 0 b 1111 1100
+	// Set to 0xF8 or 0 b 1111 1000 -> Write 0xF8
+
+	uint8_t payload_buff_GC = state;
+
+	Flash_Page_Program(write_GC_adr, &payload_buff_GC, sizeof(uint8_t));
+}
+
 static void build_L2P_and_Phys_Meta(void)
 {
     /*
@@ -245,7 +255,7 @@ void FTL_Init(void)
 
     for (int i = 0; i < FTL_SECTORS_PER_BLOCK; i++)
     {
-        first_free_page_table[i] = 0xFFFF;
+        first_free_page_table[i] = FTL_UNMAPPED;
     }
 
     for (int i = 0; i < FTL_SECTORS_PER_BLOCK * NUM_BLOCKS_PER_REGION; i++)
@@ -658,4 +668,95 @@ void FTL_GarbageCollect(void)
 	 *
 	 * Issue Hardware Erase on non-currentblockinuse
 	 */
+
+	int current_region = 0;
+	int target_region = 0;
+	if (block_in_use == 0) {
+		current_region = 0;
+		target_region = 1;
+	} else {
+		current_region = 1;
+		target_region = 0;
+	}
+	uint8_t Next_Writable_Sector_In_Target_Region = 0;
+
+	// Before starting the transfer --> Set GC State Machine for current_region transferring out
+	Set_GC_State_Machine(current_region, GC_META_TRANSFERING_OUT_BLOCK);
+
+	for (int curr_phys_sector_idx = 0; curr_phys_sector_idx < FTL_SECTORS_PER_BLOCK; curr_phys_sector_idx++) {
+		PhysicalSectorMetadata_t Phys_Sector = FTL_Phys_Page_Meta_Arr[curr_phys_sector_idx];
+		if (Phys_Sector.state == VALID_SECTOR) { // if this sector ought to be transferred
+			// Check how many pages are written to in this sector
+			uint8_t num_written_pages = first_free_page_table[Phys_Sector.logical_sector_owner]; // If first free page is idx 2, 0 and 1 are written (ie. two pages are written)
+			// Now read in that many pages - Page level transfer from old block sector to new block sector, for this one sector
+			for (int i = 0; i < num_written_pages; i++) {
+				// Read in page i - if curr_phys_sector_idx == 0 and i == 0, set GC State to 0xFF
+				uint32_t read_adr_page_i = block_sector_page_offset_to_adr(current_region, curr_phys_sector_idx, i, 0);
+				uint16_t user_bytes_in_this_page = page_payload_len_table[curr_phys_sector_idx][i];
+				uint16_t num_bytes_to_read = user_bytes_in_this_page + FTL_METADATA_PER_PAGE;
+				uint8_t buf[256] = {0};
+				Flash_Read_Data(read_adr_page_i, buf, num_bytes_to_read);
+				// buf now contains the exact metadata header + user bytes of this pager
+				if (curr_phys_sector_idx == 0 && i == 0) {
+					// This is the initial sector, and page, make sure to set GC State before transfer
+					*(buf + 2) = 0xFF;
+				}
+				// For rest of sectors' pages there is no metadata change (logical sector # and num_bytes stays the same)
+
+				// Write back to same page, i, in sector Next_Writable_Sector_In_Target_Region of target_region
+
+				uint32_t write_adr_page_i = block_sector_page_offset_to_adr(target_region, Next_Writable_Sector_In_Target_Region, i, 0);
+				// Write back to correct sector and page as many bytes as we read in from current_region
+				Flash_Page_Program(write_adr_page_i, buf, num_bytes_to_read);
+			}
+			FTL_Phys_Page_Meta_Arr[Next_Writable_Sector_In_Target_Region] = Phys_Sector;
+			L2P[FTL_Phys_Page_Meta_Arr[curr_phys_sector_idx].logical_sector_owner] = Next_Writable_Sector_In_Target_Region;
+			first_free_page_table[Next_Writable_Sector_In_Target_Region] = first_free_page_table[curr_phys_sector_idx];
+			// page_payload_len_table[Next_Writable_Sector_In_Target_Region] = page_payload_len_table[i] | Copy that old complete row to the new correct sector row
+			uint8_t old_row = curr_phys_sector_idx;
+			uint8_t new_row = Next_Writable_Sector_In_Target_Region;
+			for (int page_iter = 0; page_iter < FTL_PAGES_PER_SECTOR; page_iter++) {
+				page_payload_len_table[new_row][page_iter] = page_payload_len_table[old_row][page_iter];
+			}
+			// If we found a valid sector and filled in a new sector in the other block with the old blocks sector, increment to a new target sector to transfer to next
+			Next_Writable_Sector_In_Target_Region++;
+		}
+	}
+	// Fill in remaining for the RAM data structures, setting to default
+	// Fill all RAM data structures from sector num_valid_sectors to sector 15 with default values - L2P is just a mapping, all defaults have stayed defaults
+	for (int fill_defaults = Next_Writable_Sector_In_Target_Region; fill_defaults < FTL_SECTORS_PER_BLOCK; fill_defaults++) {
+		FTL_Phys_Page_Meta_Arr[fill_defaults].logical_sector_owner = FTL_UNMAPPED;
+		FTL_Phys_Page_Meta_Arr[fill_defaults].state = FREE_SECTOR;
+
+		first_free_page_table[fill_defaults] = FTL_UNMAPPED;
+
+		// Fill remaining sector rows with all unwritten pages, zero bytes written in all pages
+		for (int page_iter = 0; page_iter < FTL_PAGES_PER_SECTOR; page_iter++) {
+			page_payload_len_table[fill_defaults][page_iter] = 0;
+		}
+	}
+
+	// TODO: Change power-loss boot up code to check GC State and re-issue whatever is needed
+
+	// Hand over RAM switch for current block in use
+	if (current_region == 0) {
+		// flip regions
+		current_region = 1;
+		target_region = 0;
+		block_in_use = 1;
+	} else {
+		// flip regions
+		current_region = 0;
+		target_region = 1;
+		block_in_use = 0;
+	}
+
+	// Change Flash GC State Machine Metadata to reflect this prev RAM region control
+	// update GC State Machine of old block to GC_META_OBSOLETE_BLOCK, new block to GC_META_VALID_BLOCK
+
+	int old_block = target_region; // just for symmantic reasons
+	Set_GC_State_Machine(old_block, GC_META_OBSOLETE_BLOCK); // Set the region we just transfered out of as obsolete before hardware erase of that old block
+	Set_GC_State_Machine(current_region, GC_META_VALID_BLOCK); // Set the new block that we transfered into as the valid block as source of truth from now
+
+	// Issue Hardware Block Erase
 }
