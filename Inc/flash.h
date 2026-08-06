@@ -9,6 +9,7 @@
 #define FLASH_READ_STATUS_1_CMND 0x05
 #define FLASH_PAGE_PROGRAM_CMND 0x02
 #define FLASH_SECTOR_ERASE_CMND 0x20
+#define FLASH_BLOCK_ERASE_CMND 0xD8
 #define FLASH_READ_DATA_CMND 0x03
 
 #define FLASH_SR1_STATUS_MSK 0x01 // Check bit zero; 0 = free, 1 = busy
@@ -34,11 +35,19 @@
 #define MOCK_FLASH_SIZE (256 * 16 * 16 * 2)
 
 
-// API
+/*
+ * API
+ */
+
+// Hardware State Monitering Helper Functions
 void Flash_Poll_Until_Ready(void);
 void Flash_Set_Write_Enable(void);
+
+// Erase Functions
 void Flash_Erase_Sector(uint32_t adr);
-// TODO: Add Flash_Erase_Block
+void Flash_Erase_Block(uint32_t adr); // 64 KB Block Erase Used During GC
+
+// Write and Read Functions
 void Flash_Page_Program(uint32_t adr, const uint8_t *buf, uint16_t len);
 void Flash_Read_Data(uint32_t adr, uint8_t *buf, uint16_t len);
 

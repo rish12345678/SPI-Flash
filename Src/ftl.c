@@ -687,7 +687,8 @@ void FTL_GarbageCollect(void)
 		PhysicalSectorMetadata_t Phys_Sector = FTL_Phys_Page_Meta_Arr[curr_phys_sector_idx];
 		if (Phys_Sector.state == VALID_SECTOR) { // if this sector ought to be transferred
 			// Check how many pages are written to in this sector
-			uint8_t num_written_pages = first_free_page_table[Phys_Sector.logical_sector_owner]; // If first free page is idx 2, 0 and 1 are written (ie. two pages are written)
+			uint8_t num_written_pages = first_free_page_table[curr_phys_sector_idx]; // If first free page is idx 2, 0 and 1 are written (ie. two pages are written)
+			uint8_t logi_owner = Phys_Sector.logical_sector_owner;
 			// Now read in that many pages - Page level transfer from old block sector to new block sector, for this one sector
 			for (int i = 0; i < num_written_pages; i++) {
 				// Read in page i - if curr_phys_sector_idx == 0 and i == 0, set GC State to 0xFF
@@ -710,8 +711,8 @@ void FTL_GarbageCollect(void)
 				Flash_Page_Program(write_adr_page_i, buf, num_bytes_to_read);
 			}
 			FTL_Phys_Page_Meta_Arr[Next_Writable_Sector_In_Target_Region] = Phys_Sector;
-			L2P[FTL_Phys_Page_Meta_Arr[curr_phys_sector_idx].logical_sector_owner] = Next_Writable_Sector_In_Target_Region;
-			first_free_page_table[Next_Writable_Sector_In_Target_Region] = first_free_page_table[curr_phys_sector_idx];
+			L2P[logi_owner] = Next_Writable_Sector_In_Target_Region;
+			first_free_page_table[Next_Writable_Sector_In_Target_Region] = num_written_pages;
 			// page_payload_len_table[Next_Writable_Sector_In_Target_Region] = page_payload_len_table[i] | Copy that old complete row to the new correct sector row
 			uint8_t old_row = curr_phys_sector_idx;
 			uint8_t new_row = Next_Writable_Sector_In_Target_Region;
@@ -758,5 +759,9 @@ void FTL_GarbageCollect(void)
 	Set_GC_State_Machine(old_block, GC_META_OBSOLETE_BLOCK); // Set the region we just transfered out of as obsolete before hardware erase of that old block
 	Set_GC_State_Machine(current_region, GC_META_VALID_BLOCK); // Set the new block that we transfered into as the valid block as source of truth from now
 
+	// From here after the erase, the obsolete block will get wiped to an erase block, either one means the other block is the source of truth
+
 	// Issue Hardware Block Erase
+	uint32_t hardware_block_erase_adr = block_sector_page_offset_to_adr(old_block, 0, 0, 0);
+	Flash_Erase_Block(hardware_block_erase_adr);
 }
