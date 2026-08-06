@@ -181,3 +181,45 @@ void Flash_Erase_Sector(uint32_t adr) {
 	while (Get_Spi_State() != SPI_READY_STATE);
 }
 
+// Erase an entire 64 KB block (Used primarily during Garbage Collection)
+// Time 150 - 2000 ms
+void Flash_Erase_Block(uint32_t adr) {
+	/*
+	 * Call Write Enable Instruction
+	 *
+	 * Poll until not busy
+	 *
+	 * Send over 0x20 followed by addr
+	 *
+	 * Once CS pulled high, starts the erase, for a sector takes 45 - 400 ms
+	 *
+	 * Then, WEL and BSY go to zero
+	 */
+
+
+	if (adr < 0 || adr > 0x00FFFFFF) return;
+	// Look into allowing unaligned erases later; rn keep aligned req
+	if (adr % 4096 != 0) return;
+
+	// Send WE cmnd to flip on WEL flag
+	Flash_Set_Write_Enable();
+
+	// Make sure SPI Chip is done with Write Enable cmnd
+	Flash_Poll_Until_Ready();
+
+	transfer_arr[0] = FLASH_BLOCK_ERASE_CMND;
+
+	// Set the address bytes
+	// 0x00123456
+	transfer_arr[1] = (0xFF & (adr >> 16));
+	transfer_arr[2] = (0xFF & (adr >> 8));
+	transfer_arr[3] = (0xFF & adr);
+
+	user_def_transfer_len = 4;
+
+	SPI_Interrupt_Send_Payload(transfer_arr, incoming_arr, user_def_transfer_len);
+
+	while (Get_Spi_State() != SPI_READY_STATE);
+}
+
+
