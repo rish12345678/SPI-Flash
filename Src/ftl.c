@@ -70,6 +70,14 @@ static uint8_t identify_block_in_use(void)
         // TODO: In this case, power went our mid block 1 hardware erase, re-issue
         return FTL_REGION_0;
     }
+    else if (region_1_gc_meta_buffer == GC_META_ERASED_BLOCK)
+    {
+    	return FTL_REGION_0;
+    }
+    else if (region_0_gc_meta_buffer == GC_META_ERASED_BLOCK)
+	{
+		return FTL_REGION_1;
+	}
     else
     {
         // If both GC state machines show that they are "not in use", that means this is a fresh run
@@ -615,4 +623,39 @@ uint16_t FTL_Read_Sector(uint16_t logical_sector, uint8_t *incoming_payload_buff
 
 void FTL_GarbageCollect(void)
 {
+	/*
+	 * High Level Double Buffer GC: Sequentially transfer
+	 * over Valid Sectors maintaining RAM data
+	 * structures, in-Flash metadata, and GC State
+	 * Machine Metadata, and finally issue Block Erase on old
+	 *
+	 * currentregion = 0
+	 * targetregion = 1
+	 *
+	 *
+	 * Next_Writable_Sector_In_Target_Region = 0;
+	 *
+	 * HANDLE GC STATE MACHINE: Before starting software transfer
+	 *  -> Currentregion GC = GC_META_TRANSFERING_OUT_BLOCK | Other stays erased 0xFF
+	 *
+	 * Loop through PhysMeta - for (i < PhysMeta.size())
+	 *  - If PageState == VALID
+	 *  	-> Read in how many every pages there are with actual writes in this sector to RAM (If physMeta idx == 0 -> Set GC State to 0xFF) and then write to targetRegion's sector : Next_Writable_Sector_In_Target_Region in Flash
+	 *  	-> phys_meta[Next_Writable_Sector_In_Target_Region] = physMeta[i].logical_sector + State
+	 *  	-> L2P[phsyMeta[i].logical_sector] = Next_Writable_Sector_In_Target_Region
+	 *  	-> first_free_page_table[Next_Writable_Sector_In_Target_Region] = first_free_page_table[i]
+	 *  	-> page_payload_len_table[Next_Writable_Sector_In_Target_Region] = page_payload_len_table[i] | Copy that old complete row to the new correct sector row
+	 *  	** ALSO RUN CLEANUP ON REMAINING INDICES OF ALL DATA STRUCTURES NOT WRITTEN TO FOR NEW BLOCK **
+	 *
+	 * ** We do not need temporary data structures since we are sequencing through phys_meta sectors and placing them sequentially in the new block's sectors, so in iterating through phys_meta i always >= Next_Writable_Sector_In_Target_Region **
+	 *
+	 * Now sectors are places in new block, RAM data structures are setup properly, GC State machine still shows transferring, and Flash Metadata is correct.
+	 *
+	 * Now set currentblockinuse to the other block
+	 * Also update GC State Machine of old block to GC_META_OBSOLETE_BLOCK, new block to GC_META_VALID_BLOCK
+	 *
+	 * This way if there is a power-loss in following hardware erase it is clear one block shows either GC_META_OBSOLETE_BLOCK or GC_META_ERASED_BLOCK and the new one shows GC_META_VALID_BLOCK
+	 *
+	 * Issue Hardware Erase on non-currentblockinuse
+	 */
 }

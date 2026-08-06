@@ -6,13 +6,13 @@ set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra -Werror")
 
 # Tell the compiler where header files live (.h)
-include_directories(inc)
+include_directories(Inc)
 
 # Define the test executable and list the C files to compile together
 add_executable(ftl_test_runner
-    src/ftl.c
+    Src/ftl.c
     tests/mock_flash.c
-    tests/test_main.c
+    tests/test_ftl.c
 )
 
 # Enable CTest so 'ctest' command works on GitHub

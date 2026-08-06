@@ -18,5 +18,7 @@ obj/
 *.launch
 
 # Operating system files
+build/
+*.out
 .DS_Store
 Thumbs.db
