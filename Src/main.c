@@ -33,7 +33,8 @@ uint8_t receive_payload[TEST_LEN + 1] = {0};
 
 int main(void)
 {
-
+	// Call mount, NEVER CALL INIT unless your sure all blocks are cleared
+	// TODO: Only give Mount access
 	PROFILE_PIN_INIT();
 	BOUNCE_SINGLE_LONG_PROFILER();
 	SPI_Setup();
