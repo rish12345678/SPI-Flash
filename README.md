@@ -1,10 +1,8 @@
-# STM32 SPI Driver
+# Bare-Metal Embedded Flash Translation Layer (FTL) Engine
 
-Register-level SPI driver for the STM32L476RG implemented entirely without HAL.
+A power-loss resilient, high-performance Flash Translation Layer (FTL) written in C99 for bare-metal systems and SPI NOR/NAND Flash devices. Built and verified in ~45 days.
 
-## Project Goal
-
-Rather than relying on STM32 HAL, this project develops a SPI peripheral driver directly from the reference manual.
+---
 
 My emphasis is on:
 
@@ -17,7 +15,7 @@ My emphasis is on:
 - DMA integration
 - Debugging using hardware tools
 
-
+---
 
 ## Hardware
 
@@ -42,53 +40,58 @@ Tools
 
 - Logic Analyzer
 
+---
+
+## Key Technical Highlights
+- **Dynamic L2P Address Mapping:** Out-of-place page logging with sub-sector windowed read/write operations.
+- **Power-Loss Recovery (PLR):** Monotonic 4-state bitmask progression (`0xFF` → `0xFC` → `0xF8` → `0xF0`) ensuring atomic double-buffer Garbage Collection without state corruption.
+- **Hardware Abstraction Layer (HAL):** Custom bare-metal SPI driver with non-blocking status register (`SR1_BUSY`) polling and Write Enable Latch (`WEL`) control.
+- **High Payload Efficiency:** 98.44% memory utilization with a minimal 4-byte metadata header per 256-byte page.
+
+---
+
+## System Architecture
+
+### 1. FTL State Machine Progression (Power-Loss Safety)
+During Garbage Collection, physical block states progress monotonically via bit-dropping operations (turning `1`s into `0`s without hardware erases):
+
+| State | Bitmask Value | Description |
+| :--- | :--- | :--- |
+| `GC_META_ERASED_BLOCK` | `0xFF` (`1111 1111`) | Fresh/Clean Block ready for target writes |
+| `GC_META_VALID_BLOCK` | `0xFC` (`1111 1100`) | Active block containing live user data |
+| `GC_META_TRANSFERING_OUT_BLOCK` | `0xF8` (`1111 1000`) | Source block undergoing active sector migration |
+| `GC_META_OBSOLETE_BLOCK` | `0xF0` (`1111 0000`) | Deprecated block queued for hardware block erase |
+
+### 2. Low-Level SPI Performance & Logic Analyzer Waveforms
+
+<details>
+<summary>🔍 These show the progression of SPI bus timing through Logic Analyzer Waveform captures both with polling and interrupts</summary>
+
+### Logic Analyzer / SPI Waveform Analysis
+
+#### Polling Waveform Progression
+
+<img width="1443" height="723" alt="Screenshot 2026-07-06 at 4 38 49 PM" src="https://github.com/user-attachments/assets/07e1fef4-ecf4-41c4-9064-fb66adca717a" />
+Fig 1.1: Initial waveform Sending Dummy Byte (0x24) Over MOSI Line
+Issue to fix: Right now I am using a for loop to handle delays between byte transmissions, delay is too large, implement an accurate time sensitive way to regulate delays
+
+<img width="1251" height="636" alt="Screenshot 2026-07-06 at 5 33 46 PM" src="https://github.com/user-attachments/assets/32ed1b3a-a7dc-4b31-9fa9-74bedad9e916" />
+Fig 1.2: Scaled waveform sending 0x84 Over MOSI Line
+Issue to fix: The CS line is going high before a single clock cycle of data is sent, make CS stay low until all eight bits are sent over
+
+<img width="1248" height="634" alt="Screenshot 2026-07-07 at 3 37 13 AM" src="https://github.com/user-attachments/assets/136f1f80-bf3a-4b92-b191-7957a1523f52" />
+Fig 1.3: Complete validation of loopback test to ensure MISO line works appropriately, and we can echo bytes back
+
+<img width="1246" height="632" alt="Screenshot 2026-07-07 at 2 51 12 PM" src="https://github.com/user-attachments/assets/b2e70168-0dd6-426b-a762-6d1c9785ee67" />
+Fig 1.4: Set polling wall to check that RX FIFO receives byte and separate one to ensure Shift Register BSY flag set to zero, so it is done with transmission + cleanup, then raise CS high only AFTER all bits have been transceived
+Final Function execution time to send and receive one byte: 41 μs, with each clock cycle taking four μs so the total transmission time was 32 μs
+Time to Send Several Bytes: N/A; due to polling, we would have to guess a short time to loop before calling the function again; inaccurate.
+
+#### Polling SPI Waveform Analysis
 
 
 
-
-
-## Development Timeline
-
-The driver was intentionally developed in stages.
-
-| Stage | Status | Purpose |
-|--------|--------|---------|
-| Blocking Driver | Complete | Understand SPI registers |
-| Interrupt Driver | In Progress | Eliminate CPU busy waiting |
-| DMA Driver | Planned | High throughput transfers |
-
-
-
-## Blocking Transmission High-Level Walkthrough
-
-1. Call SPI_SEND_BYTE(void)
-2. Drop CS line
-3. Loop x times, x being the number of bytes we want to send
-   -  Poll until TX buffer is empty -> previously written byte sent to shift register
-   -  Once empty, send next byte into TX buffer -> let hardware send it over MOSI line
-   -  Poll until RX buffer is not empty (contains eight bits) -> received from MISO line
-   -  Once it contains one byte, throw it into "received" array
-4. Wait for BSY status flag to turn off -> SPI cleans up to the default state
-5. Raise CS line and return
-
-## Blocking Data Flow
-
-    Byte in global memory -> Once TXE = 1, byte sent to DR (TX FIFO Buffer) -> Since we cast to uint8_t, TXE gets set to 0 -> Once Shift Register Is Ready, Hardware byte into shift register
-                                                                                                                                                                          |                                                                                                                                                                                                                                                      |
-                                                                                                                                                                          |
-                                                                                                                                                                          |
-                                                                                                                                                                          V
-    RX Buffer Set to Flag RXNE = 0 at eight bits instead of the default 16 out of 32 bits <----------Received byte gets sent to RX FIFO Buffer <-------- Hardware handles shifting out over MOSI and shifting in over MISO
-      |                                                                                                                                                                                                                                                      |
-      |
-      |                                                                                                                                                                                                      
-      V
-    Read DR to pop byte off of RX Buffer
-
-
-## Logic Analyzer Waveforms
-
-This SPI waveform was captured using an eight-channel logic analyzer to observe and analyze:
+These SPI waveform was captured using an eight-channel logic analyzer to observe and analyze:
 
 - Clock frequency
 - Clock polarity
@@ -256,44 +259,9 @@ Clearly, there is only the no-op instruction that was placed in between CS-High 
 
 
 
-## Improving Interrupt Efficiency
-
-### Base Interrupt Efficiency:
-
-Measurement Objective: Quantify total CPU overhead, the time trapped inside the ISR, versus available background execution time during the total four-byte transmission.
-
-Compiler Optimization Level: -O0
-
-Total Transfer Time: 173.00 μs (CS Low to CS High)
-
-Cumulative ISR Execution Time: 132.25 μs (Over six total interrupt triggers)
-
-CPU Utilization Overhead: 76.45% (132.25 / 173.00)
-
-Processor Idle: 23.55% (40.75 μs)
- 
-
-### Polling Waveform Progression
-
-<img width="1443" height="723" alt="Screenshot 2026-07-06 at 4 38 49 PM" src="https://github.com/user-attachments/assets/07e1fef4-ecf4-41c4-9064-fb66adca717a" />
-Fig 1.1: Initial waveform Sending Dummy Byte (0x24) Over MOSI Line
-Issue to fix: Right now I am using a for loop to handle delays between byte transmissions, delay is too large, implement an accurate time sensitive way to regulate delays
-
-<img width="1251" height="636" alt="Screenshot 2026-07-06 at 5 33 46 PM" src="https://github.com/user-attachments/assets/32ed1b3a-a7dc-4b31-9fa9-74bedad9e916" />
-Fig 1.2: Scaled waveform sending 0x84 Over MOSI Line
-Issue to fix: The CS line is going high before a single clock cycle of data is sent, make CS stay low until all eight bits are sent over
-
-<img width="1248" height="634" alt="Screenshot 2026-07-07 at 3 37 13 AM" src="https://github.com/user-attachments/assets/136f1f80-bf3a-4b92-b191-7957a1523f52" />
-Fig 1.3: Complete validation of loopback test to ensure MISO line works appropriately, and we can echo bytes back
-
-<img width="1246" height="632" alt="Screenshot 2026-07-07 at 2 51 12 PM" src="https://github.com/user-attachments/assets/b2e70168-0dd6-426b-a762-6d1c9785ee67" />
-Fig 1.4: Set polling wall to check that RX FIFO receives byte and separate one to ensure Shift Register BSY flag set to zero, so it is done with transmission + cleanup, then raise CS high only AFTER all bits have been transceived
-Final Function execution time to send and receive one byte: 41 μs, with each clock cycle taking four μs so the total transmission time was 32 μs
-Time to Send Several Bytes: N/A; due to polling, we would have to guess a short time to loop before calling the function again; inaccurate.
 
 
-
-### Interrupts Waveform Progression
+#### Interrupts Waveform Progression
 
 
 
@@ -327,3 +295,72 @@ Fig 1.8 & Fig 1.9: Just for a sanity check I made the loopback test such that if
 
 
 Then I ran the profiler validation code to check for the incorrect bytes in a loop.  In the first picture we see two jumps on the profile pin indicating two incorrect bytes in the incoming_arr, and then in the second picture I got rid of the two lines of code above, and it can back to the second picture where there are no jumps of the profiler line.
+
+#### Interrupt-driven SPI Waveform Analysis
+
+### Base Interrupt Efficiency:
+
+Measurement Objective: Quantify total CPU overhead, the time trapped inside the ISR, versus available background execution time during the total four-byte transmission.
+
+Compiler Optimization Level: -O0
+
+Total Transfer Time: 173.00 μs (CS Low to CS High)
+
+Cumulative ISR Execution Time: 132.25 μs (Over six total interrupt triggers)
+
+CPU Utilization Overhead: 76.45% (132.25 / 173.00)
+
+Processor Idle: 23.55% (40.75 μs)
+
+</details>
+
+---
+
+## 🛠️ Hard Engineering Hurdles Overcome
+1. **Flash Bit-Flipping Integrity:** Fixed double-program bugs by ensuring state transitions in Page 0 only drop `1`s to `0`s, completely bypassing unnecessary hardware block erases.
+2. **Transaction Rollbacks on Power Loss:** Implemented crash-safe mount logic (`FTL_Mount`) that automatically detects mid-transfer failures, rolls back corrupt target blocks, and rebuilds RAM tables dynamically.
+
+---
+
+## 🚀 Building and Testing
+
+```bash
+# Build test suite
+cmake -B build
+cmake --build build
+
+# Run unit test suite
+./build/ftl_test_runner
+
+# Build with forced flash factory reset flag
+cmake -B build -DFORCE_FLASH_RESET=ON
+cmake --build build
+```
+
+
+
+## Blocking Transmission High-Level Walkthrough
+
+1. Call SPI_SEND_BYTE(void)
+2. Drop CS line
+3. Loop x times, x being the number of bytes we want to send
+   -  Poll until TX buffer is empty -> previously written byte sent to shift register
+   -  Once empty, send next byte into TX buffer -> let hardware send it over MOSI line
+   -  Poll until RX buffer is not empty (contains eight bits) -> received from MISO line
+   -  Once it contains one byte, throw it into "received" array
+4. Wait for BSY status flag to turn off -> SPI cleans up to the default state
+5. Raise CS line and return
+
+## Blocking Data Flow
+
+    Byte in global memory -> Once TXE = 1, byte sent to DR (TX FIFO Buffer) -> Since we cast to uint8_t, TXE gets set to 0 -> Once Shift Register Is Ready, Hardware byte into shift register
+                                                                                                                                                                          |                                                                                                                                                                                                                                                      |
+                                                                                                                                                                          |
+                                                                                                                                                                          |
+                                                                                                                                                                          V
+    RX Buffer Set to Flag RXNE = 0 at eight bits instead of the default 16 out of 32 bits <----------Received byte gets sent to RX FIFO Buffer <-------- Hardware handles shifting out over MOSI and shifting in over MISO
+      |                                                                                                                                                                                                                                                      |
+      |
+      |                                                                                                                                                                                                      
+      V
+    Read DR to pop byte off of RX Buffer
