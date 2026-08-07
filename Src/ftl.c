@@ -173,6 +173,84 @@ static void build_L2P_and_Phys_Meta(void)
         next_clean_sector_idx = FTL_SECTORS_PER_BLOCK;
 }
 
+
+static void mid_GC_powerloss_reboot(void) {
+	uint8_t block_zero_GC_state = 0xFF;
+	uint8_t block_one_GC_state = 0xFF;
+
+	uint32_t block_zero_adr = block_sector_page_offset_to_adr(0, 0, 0, 2);
+	uint32_t block_one_adr = block_sector_page_offset_to_adr(1, 0, 0, 2);
+
+	Flash_Read_Data(block_zero_adr, &block_zero_GC_state, 1);
+	Flash_Read_Data(block_one_adr, &block_one_GC_state, 1);
+
+	// Mid Transfer or erase power-loss recovery Re-Issues
+
+
+	// Case Zero: Completely Blank Regions - Clean Start
+	if (block_zero_GC_state == GC_META_ERASED_BLOCK && block_one_GC_state == GC_META_ERASED_BLOCK) {
+		Set_GC_State_Machine(0, GC_META_VALID_BLOCK);
+		block_in_use = 0;
+		return;
+	}
+
+	// Case One: Power cut during HW erase of block / region 0
+	if (block_zero_GC_state == GC_META_OBSOLETE_BLOCK && block_one_GC_state == GC_META_VALID_BLOCK) {
+		Flash_Erase_Block(block_sector_page_offset_to_adr(0, 0, 0, 0)); // Finish erasing Block 0
+		block_in_use = 1;
+	}
+	// Inverse case of prev
+	else if (block_one_GC_state == GC_META_OBSOLETE_BLOCK && block_zero_GC_state == GC_META_VALID_BLOCK) {
+		Flash_Erase_Block(block_sector_page_offset_to_adr(1, 0, 0, 0)); // Finish erasing Block 1
+		block_in_use = 0;
+	}
+	// Case Two: Power cut after transfer finished before old block marked obsolete / HW erase began
+	else if (block_zero_GC_state == GC_META_TRANSFERING_OUT_BLOCK && block_one_GC_state == GC_META_VALID_BLOCK) {
+		Set_GC_State_Machine(0, GC_META_OBSOLETE_BLOCK);
+		Flash_Erase_Block(block_sector_page_offset_to_adr(0, 0, 0, 0));
+		block_in_use = 1;
+	}
+	else if (block_one_GC_state == GC_META_TRANSFERING_OUT_BLOCK && block_zero_GC_state == GC_META_VALID_BLOCK) {
+		Set_GC_State_Machine(1, GC_META_OBSOLETE_BLOCK);
+		Flash_Erase_Block(block_sector_page_offset_to_adr(1, 0, 0, 0));
+		block_in_use = 0;
+	}
+	// Case Three: Power cut mid transfer | Target block is blank or corrupted, so wipe it, just
+	// rebuild the RAM data structures from the orig block and let the GC Transfer software
+	// run naturally on the next write
+	else if (block_zero_GC_state == GC_META_TRANSFERING_OUT_BLOCK) {
+		// Target Block 1 was incomplete. Erase Block 1 and mount Block 0.
+		Flash_Erase_Block(block_sector_page_offset_to_adr(1, 0, 0, 0));
+		block_in_use = 0;
+	}
+	// Inverse case of prev
+	else if (block_one_GC_state == GC_META_TRANSFERING_OUT_BLOCK) {
+		Flash_Erase_Block(block_sector_page_offset_to_adr(0, 0, 0, 0));
+		block_in_use = 1;
+	}
+	// Case Four: Standard boot up, power-loss occurred amidst no part of FTL_GarbageCollect
+	else if (block_zero_GC_state == GC_META_VALID_BLOCK) {
+		block_in_use = 0;
+	}
+	// Inverse case of prev
+	else if (block_one_GC_state == GC_META_VALID_BLOCK) {
+		block_in_use = 1;
+	}
+}
+
+static void set_reset_meta(void) {
+	// Block erase both blocks
+	uint32_t b0_adr = block_sector_page_offset_to_adr(0, 0, 0, 0);
+	uint32_t b1_adr = block_sector_page_offset_to_adr(1, 0, 0, 0);
+
+	Flash_Erase_Block(b0_adr);
+	Flash_Erase_Block(b1_adr);
+}
+
+
+
+// Non-Helper Functions
+
 void build_first_free_page_table_and_page_payload_len_table(void)
 {
     // TODO: Look into using a magic number
@@ -216,7 +294,7 @@ void build_first_free_page_table_and_page_payload_len_table(void)
     }
 }
 
-void FTL_Init(void)
+static void FTL_Init(void)
 {
 
     /*
@@ -318,8 +396,13 @@ void FTL_Mount(void)
 
     FTL_Init();
 
-    // Got the block number (0 or 1 for now)
-    block_in_use = identify_block_in_use();
+#ifdef FORCE_FLASH_RESET
+	set_reset_meta();
+#endif
+
+
+    // Re-issue Hardware erases if necessary (Rebooting after power-loss MID-GC function)
+    mid_GC_powerloss_reboot();
 
     // Build L2P and FTL_Phys_Page_Meta_Arr
     build_L2P_and_Phys_Meta();

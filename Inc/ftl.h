@@ -3,6 +3,11 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+
+// Option to force a full chip reset on boot
+// TODO: Create Compiler Flag -DFORCE_FLASH_RESET)
+//#define FORCE_FLASH_RESET
+
 /*
  * Initial Design:
  *
@@ -45,7 +50,7 @@
 #define GC_META_ERASED_BLOCK 0xFF
 #define GC_META_VALID_BLOCK 0xFC // 0 b 1111 1100
 #define GC_META_TRANSFERING_OUT_BLOCK 0xF8 // 0 b 1111 1000
-#define GC_META_OBSOLETE_BLOCK 0xFA
+#define GC_META_OBSOLETE_BLOCK 0xF0 // 0b 1111 0000
 
 
 #define FTL_UNMAPPED 0xFFFF
@@ -66,7 +71,7 @@ typedef struct {
 } PhysicalSectorMetadata_t;
 
 // FTL API Functions
-void FTL_Init(void);
+// void FTL_Init(void); // Don't allow public access to this function
 void FTL_Mount(void);
 bool FTL_Write_Sector(uint16_t logical_sector, const uint8_t *payload_buf, int payload_len);
 bool FTL_Append_Sector(uint16_t logical_sector, const uint8_t *payload_buf, int payload_len);
