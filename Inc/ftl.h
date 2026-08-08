@@ -6,7 +6,7 @@
 
 // Option to force a full chip reset on boot
 // TODO: Create Compiler Flag -DFORCE_FLASH_RESET)
-//#define FORCE_FLASH_RESET
+// #define FORCE_FLASH_RESET
 
 /*
  * Initial Design:
