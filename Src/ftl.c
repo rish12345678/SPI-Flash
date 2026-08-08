@@ -781,7 +781,7 @@ void FTL_GarbageCollect(void)
 				uint8_t buf[256] = {0};
 				Flash_Read_Data(read_adr_page_i, buf, num_bytes_to_read);
 				// buf now contains the exact metadata header + user bytes of this pager
-				if (curr_phys_sector_idx == 0 && i == 0) {
+				if (Next_Writable_Sector_In_Target_Region == 0 && i == 0) {
 					// This is the initial sector, and page, make sure to set GC State before transfer
 					*(buf + 2) = 0xFF;
 				}
