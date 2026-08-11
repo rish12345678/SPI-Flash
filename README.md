@@ -331,10 +331,6 @@ cmake --build build
 
 # Run unit test suite
 ./build/ftl_test_runner
-
-# Build with forced flash factory reset flag
-cmake -B build -DFORCE_FLASH_RESET=ON
-cmake --build build
 ```
 
 
