@@ -238,14 +238,14 @@ static void mid_GC_powerloss_reboot(void) {
 	}
 }
 
-//static void set_reset_meta(void) {
-//	// Block erase both blocks
-//	uint32_t b0_adr = block_sector_page_offset_to_adr(0, 0, 0, 0);
-//	uint32_t b1_adr = block_sector_page_offset_to_adr(1, 0, 0, 0);
-//
-//	Flash_Erase_Block(b0_adr);
-//	Flash_Erase_Block(b1_adr);
-//}
+static void set_reset_meta(void) {
+	// Block erase both blocks
+	uint32_t b0_adr = block_sector_page_offset_to_adr(0, 0, 0, 0);
+	uint32_t b1_adr = block_sector_page_offset_to_adr(1, 0, 0, 0);
+
+	Flash_Erase_Block(b0_adr);
+	Flash_Erase_Block(b1_adr);
+}
 
 
 
