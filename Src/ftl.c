@@ -294,7 +294,7 @@ void build_first_free_page_table_and_page_payload_len_table(void)
     }
 }
 
-static void FTL_Init(void)
+void FTL_Init(void)
 {
 
     /*
