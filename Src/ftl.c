@@ -27,64 +27,64 @@ static int block_sector_page_offset_to_adr(int block, int sector, int page, int 
     return (block * FTL_BLOCK_SIZE) + (sector * FTL_SECTOR_SIZE) + (page * FTL_PAGE_SIZE) + offset;
 }
 
-static uint8_t identify_block_in_use(void)
-{
-    // Read in GC State Machine byte for both starting sectors of each section(currently in use and not)
-    uint32_t region_0_gc_state_machine_adr = block_sector_page_offset_to_adr(FTL_REGION_0, 0, 0, FTL_Flash_Logical_Page_Meta);
-    uint32_t region_1_gc_state_machine_adr = block_sector_page_offset_to_adr(FTL_REGION_1, 0, 0, FTL_Flash_Logical_Page_Meta);
-    uint8_t region_0_gc_meta_buffer;
-    uint8_t region_1_gc_meta_buffer;
-
-    Flash_Read_Data(region_0_gc_state_machine_adr, &region_0_gc_meta_buffer, FTL_Flash_GC_State_Meta);
-    Flash_Read_Data(region_1_gc_state_machine_adr, &region_1_gc_meta_buffer, FTL_Flash_GC_State_Meta);
-
-    if (region_0_gc_meta_buffer == GC_META_VALID_BLOCK)
-    {
-        // Power went during general (non-gc) use of block 0
-        return FTL_REGION_0;
-    }
-    else if (region_1_gc_meta_buffer == GC_META_VALID_BLOCK)
-    {
-        // Power went during general (non-gc) use of block 1
-        return FTL_REGION_1;
-    }
-    else if (region_0_gc_meta_buffer == GC_META_TRANSFERING_OUT_BLOCK)
-    {
-        // Power went out mid transfer from block 0 to block 1, block 0 is still the source of truth
-        return FTL_REGION_0;
-    }
-    else if (region_1_gc_meta_buffer == GC_META_TRANSFERING_OUT_BLOCK)
-    {
-        // Power went out mid transfer from block 1 to block 0, block 1 is still the source of truth
-        return FTL_REGION_1;
-    }
-    else if (region_0_gc_meta_buffer == GC_META_OBSOLETE_BLOCK)
-    {
-        // Power went out mid hardware erase of block 0, block 1 is now the source of truth
-        // TODO: In this case, power went our mid block 0 hardware erase, re-issue
-        return FTL_REGION_1;
-    }
-    else if (region_1_gc_meta_buffer == GC_META_OBSOLETE_BLOCK)
-    {
-        // Power went out mid hardware erase of block 1, block 0 is now the source of truth
-        // TODO: In this case, power went our mid block 1 hardware erase, re-issue
-        return FTL_REGION_0;
-    }
-    else if (region_1_gc_meta_buffer == GC_META_ERASED_BLOCK)
-    {
-    	return FTL_REGION_0;
-    }
-    else if (region_0_gc_meta_buffer == GC_META_ERASED_BLOCK)
-	{
-		return FTL_REGION_1;
-	}
-    else
-    {
-        // If both GC state machines show that they are "not in use", that means this is a fresh run
-        // power did not go out, do not change anything
-        return FTL_REGION_0;
-    }
-}
+//static uint8_t identify_block_in_use(void)
+//{
+//    // Read in GC State Machine byte for both starting sectors of each section(currently in use and not)
+//    uint32_t region_0_gc_state_machine_adr = block_sector_page_offset_to_adr(FTL_REGION_0, 0, 0, FTL_Flash_Logical_Page_Meta);
+//    uint32_t region_1_gc_state_machine_adr = block_sector_page_offset_to_adr(FTL_REGION_1, 0, 0, FTL_Flash_Logical_Page_Meta);
+//    uint8_t region_0_gc_meta_buffer;
+//    uint8_t region_1_gc_meta_buffer;
+//
+//    Flash_Read_Data(region_0_gc_state_machine_adr, &region_0_gc_meta_buffer, FTL_Flash_GC_State_Meta);
+//    Flash_Read_Data(region_1_gc_state_machine_adr, &region_1_gc_meta_buffer, FTL_Flash_GC_State_Meta);
+//
+//    if (region_0_gc_meta_buffer == GC_META_VALID_BLOCK)
+//    {
+//        // Power went during general (non-gc) use of block 0
+//        return FTL_REGION_0;
+//    }
+//    else if (region_1_gc_meta_buffer == GC_META_VALID_BLOCK)
+//    {
+//        // Power went during general (non-gc) use of block 1
+//        return FTL_REGION_1;
+//    }
+//    else if (region_0_gc_meta_buffer == GC_META_TRANSFERING_OUT_BLOCK)
+//    {
+//        // Power went out mid transfer from block 0 to block 1, block 0 is still the source of truth
+//        return FTL_REGION_0;
+//    }
+//    else if (region_1_gc_meta_buffer == GC_META_TRANSFERING_OUT_BLOCK)
+//    {
+//        // Power went out mid transfer from block 1 to block 0, block 1 is still the source of truth
+//        return FTL_REGION_1;
+//    }
+//    else if (region_0_gc_meta_buffer == GC_META_OBSOLETE_BLOCK)
+//    {
+//        // Power went out mid hardware erase of block 0, block 1 is now the source of truth
+//        // TODO: In this case, power went our mid block 0 hardware erase, re-issue
+//        return FTL_REGION_1;
+//    }
+//    else if (region_1_gc_meta_buffer == GC_META_OBSOLETE_BLOCK)
+//    {
+//        // Power went out mid hardware erase of block 1, block 0 is now the source of truth
+//        // TODO: In this case, power went our mid block 1 hardware erase, re-issue
+//        return FTL_REGION_0;
+//    }
+//    else if (region_1_gc_meta_buffer == GC_META_ERASED_BLOCK)
+//    {
+//    	return FTL_REGION_0;
+//    }
+//    else if (region_0_gc_meta_buffer == GC_META_ERASED_BLOCK)
+//	{
+//		return FTL_REGION_1;
+//	}
+//    else
+//    {
+//        // If both GC state machines show that they are "not in use", that means this is a fresh run
+//        // power did not go out, do not change anything
+//        return FTL_REGION_0;
+//    }
+//}
 
 static void Set_GC_State_Machine(int region, uint8_t state) {
 	int write_GC_adr = block_sector_page_offset_to_adr(region, 0, 0, 2);
@@ -238,14 +238,14 @@ static void mid_GC_powerloss_reboot(void) {
 	}
 }
 
-static void set_reset_meta(void) {
-	// Block erase both blocks
-	uint32_t b0_adr = block_sector_page_offset_to_adr(0, 0, 0, 0);
-	uint32_t b1_adr = block_sector_page_offset_to_adr(1, 0, 0, 0);
-
-	Flash_Erase_Block(b0_adr);
-	Flash_Erase_Block(b1_adr);
-}
+//static void set_reset_meta(void) {
+//	// Block erase both blocks
+//	uint32_t b0_adr = block_sector_page_offset_to_adr(0, 0, 0, 0);
+//	uint32_t b1_adr = block_sector_page_offset_to_adr(1, 0, 0, 0);
+//
+//	Flash_Erase_Block(b0_adr);
+//	Flash_Erase_Block(b1_adr);
+//}
 
 
 

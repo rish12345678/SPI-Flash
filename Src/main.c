@@ -110,6 +110,8 @@ int main(void)
 	FTL_Mount();
 
 	FTL_Read_Sector(2, rec_pay, 0, 100);
+
+
 //
 //	// Clear sector + program
 //	Flash_Erase_Sector(0x000000);
