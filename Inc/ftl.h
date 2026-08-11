@@ -71,7 +71,7 @@ typedef struct {
 } PhysicalSectorMetadata_t;
 
 // FTL API Functions
-// void FTL_Init(void); // Don't allow public access to this function
+void FTL_Init(void); // Only called by test
 void FTL_Mount(void);
 bool FTL_Write_Sector(uint16_t logical_sector, const uint8_t *payload_buf, int payload_len);
 bool FTL_Append_Sector(uint16_t logical_sector, const uint8_t *payload_buf, int payload_len);
